@@ -207,14 +207,11 @@ jobs:
           # 临时修复：为了确保构建成功，如果启用 rootfs，则尝试不指定固件大小（rootfs 是压缩包，大小自适应）
           # 但 set_partition.sh 是全局生效的。
           # 错误可能来自 block-mount 在 rootfs 环境下的配置脚本失败。
-          # 或者是因为 rootfs 生成时空间不足 (CONFIG_TARGET_ROOTFS_PARTSIZE 对 rootfs 制作过程也有影响)
-          
-          # 尝试加大 rootfs 构建时的冗余空间
-          echo "CONFIG_TARGET_ROOTFS_PARTSIZE=4096" >> .config
           
           # 增加 DISABLED_SERVICES 用于禁用不必要的服务自启，可能解决某些脚本在 chroot 下失败的问题
+          # 增加 V=s 开启详细日志，以便排查 Error 2 的具体原因
           
-          make image PROFILE="generic" PACKAGES="${{ env.PACKAGES }}" FILES="files" DISABLED_SERVICES="dockerd"
+          make image PROFILE="generic" PACKAGES="${{ env.PACKAGES }}" FILES="files" DISABLED_SERVICES="dockerd" V=s
 
       - name: 整理构建产物
         run: |
