@@ -153,9 +153,10 @@ jobs:
           luci-i18n-base-zh-cn luci-i18n-firewall-zh-cn \
           luci-app-ttyd luci-i18n-ttyd-zh-cn \
           luci-app-diskman luci-i18n-diskman-zh-cn \
+          openssh-sftp-server \
           bash curl wget-ssl tar unzip bind-dig \
           kmod-usb-storage kmod-usb-storage-uas kmod-fs-ext4 kmod-fs-vfat kmod-fs-exfat \
-          block-mount fdisk e2fsprogs"
+          block-mount fdisk e2fsprogs lsblk parted"
 
           # 获取当前版本
           VERSION="${{ github.event.inputs.luci_version }}"
