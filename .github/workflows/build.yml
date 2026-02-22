@@ -39,6 +39,11 @@ on:
         required: false
         type: boolean
         default: true
+      enable_rootfs:
+        description: '生成 Rootfs 格式固件 (Docker/LXC容器)'
+        required: false
+        type: boolean
+        default: false
       enable_pppoe:
         description: '启用 PPPoE 拨号配置'
         required: false
@@ -109,6 +114,7 @@ jobs:
           ENABLE_STORE: ${{ github.event.inputs.enable_store }}
           ENABLE_DOCKER: ${{ github.event.inputs.enable_docker }}
           ENABLE_ISO: ${{ github.event.inputs.enable_iso }}
+          ENABLE_ROOTFS: ${{ github.event.inputs.enable_rootfs }}
           ENABLE_PPPOE: ${{ github.event.inputs.enable_pppoe }}
           PPPOE_USER: ${{ github.event.inputs.pppoe_user }}
           PPPOE_PASS: ${{ github.event.inputs.pppoe_pass }}
@@ -174,6 +180,11 @@ jobs:
              echo "CONFIG_ISO_IMAGES=y" >> .config
           fi
           
+          # Rootfs 生成支持 (可选)
+          if [ "${ENABLE_ROOTFS}" == "true" ]; then
+             echo "CONFIG_TARGET_ROOTFS_TARGZ=y" >> .config
+          fi
+          
           # 读取自定义包
           CUSTOM_PACKAGES=$(cat custom_packages.txt | tr '\n' ' ')
           
@@ -191,6 +202,7 @@ jobs:
           # 查找 .img.gz (GZIP压缩的磁盘镜像) 和 .iso (ISO镜像)
           find openwrt-ib/bin/targets/x86/64 -name "*.img.gz" -exec cp {} firmware/ \;
           find openwrt-ib/bin/targets/x86/64 -name "*.iso" -exec cp {} firmware/ \;
+          find openwrt-ib/bin/targets/x86/64 -name "*rootfs.tar.gz" -exec cp {} firmware/ \;
           ls -lh firmware/
 
       - name: 上传构建产物
