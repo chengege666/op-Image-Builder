@@ -23,7 +23,6 @@ on:
         type: choice
         options:
           - '24.10.5'
-          - '23.05.5'
           - 'SNAPSHOT'
       enable_store:
         description: '启用应用商店 (iStore)'
@@ -140,11 +139,20 @@ jobs:
           # 注意: 移除 block-mount (可能已内置) 和 luci-app-firewall (可能与 i18n 冲突)
           # 使用 make image 时，如果基础包里已有，再次指定有时会报错，我们精简一下
           # 注意: 24.10 版本可能不需要显式指定 luci-i18n-opkg-zh-cn，或者包名有变
+          # 尝试添加 luci-i18n-opkg-zh-cn，如果不成功则自动跳过
           BASE_PACKAGES="luci luci-base luci-ssl uhttpd uhttpd-mod-ubus \
           luci-i18n-base-zh-cn luci-i18n-firewall-zh-cn \
           bash curl wget-ssl tar unzip bind-dig \
           kmod-usb-storage kmod-usb-storage-uas kmod-fs-ext4 kmod-fs-vfat kmod-fs-exfat \
           fdisk e2fsprogs"
+
+          # 获取当前版本
+          VERSION="${{ github.event.inputs.luci_version }}"
+
+          # 24.10+ 版本的 luci-i18n-package-manager-zh-cn 替代了旧版 opkg 中文包
+          if [[ "$VERSION" == "24.10."* ]] || [[ "$VERSION" == "SNAPSHOT" ]]; then
+              BASE_PACKAGES="$BASE_PACKAGES luci-i18n-package-manager-zh-cn"
+          fi
           
           # 读取自定义包
           CUSTOM_PACKAGES=$(cat custom_packages.txt | tr '\n' ' ')

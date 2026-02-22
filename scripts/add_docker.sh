@@ -7,4 +7,4 @@ if [ "${ENABLE_DOCKER}" != "true" ]; then
 fi
 
 # For Image Builder, we just need to list packages
-echo "dockerd docker luci-app-dockerman cgroupfs-mount" >> custom_packages.txt
+echo "dockerd docker luci-app-dockerman cgroupfs-mount luci-i18n-dockerman-zh-cn" >> custom_packages.txt
