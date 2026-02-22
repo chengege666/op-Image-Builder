@@ -1,0 +1,210 @@
+name: 构建 P&W R619AC (OpenWrt)
+
+on:
+  workflow_dispatch:
+    inputs:
+      lan_ip:
+        description: '路由器管理地址 (LAN IP)'
+        required: true
+        default: '192.168.1.1'
+      luci_version:
+        description: 'OpenWrt 版本'
+        required: true
+        default: '24.10.5'
+        type: choice
+        options:
+          - '24.10.5'
+          - 'SNAPSHOT'
+      enable_store:
+        description: '启用应用商店 (iStore)'
+        required: false
+        type: boolean
+        default: true
+      enable_docker:
+        description: '启用 Docker (建议配合 USB 存储使用)'
+        required: false
+        type: boolean
+        default: false
+      enable_pppoe:
+        description: '启用 PPPoE 拨号配置'
+        required: false
+        type: boolean
+        default: false
+      pppoe_user:
+        description: 'PPPoE 用户名'
+        required: false
+      pppoe_pass:
+        description: 'PPPoE 密码'
+        required: false
+
+permissions:
+  contents: read
+  actions: write
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 初始化构建环境
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential libncurses-dev zlib1g-dev gawk git gettext libssl-dev xsltproc rsync wget unzip python3 python3-setuptools python3-pyelftools zstd
+
+      - name: 下载 Image Builder
+        run: |
+          VERSION="${{ github.event.inputs.luci_version }}"
+          TARGET="ipq40xx/generic"
+          
+          if [ "$VERSION" == "SNAPSHOT" ]; then
+             FILE_EXT="tar.zst"
+             # OpenWrt Snapshot URL pattern
+             IB_URL="https://downloads.openwrt.org/snapshots/targets/${TARGET}/openwrt-imagebuilder-${TARGET//\//-}.Linux-x86_64.${FILE_EXT}"
+          else
+             # OpenWrt Release URL pattern
+             if [[ "$VERSION" == "23.05."* ]]; then
+                FILE_EXT="tar.xz"
+             else
+                FILE_EXT="tar.zst"
+             fi
+             IB_URL="https://downloads.openwrt.org/releases/${VERSION}/targets/${TARGET}/openwrt-imagebuilder-${VERSION}-${TARGET//\//-}.Linux-x86_64.${FILE_EXT}"
+          fi
+          
+          echo "正在下载 Image Builder..."
+          echo "版本: $VERSION"
+          echo "下载地址: $IB_URL"
+          
+          if ! wget -qO openwrt-ib.${FILE_EXT} "$IB_URL"; then
+             echo "Error: 下载失败！请检查版本号 $VERSION 是否存在，或者 URL 是否正确。"
+             # Try alternative extension if failed
+             if [[ "$FILE_EXT" == "tar.xz" ]]; then
+                FILE_EXT="tar.zst"
+             else
+                FILE_EXT="tar.xz"
+             fi
+             echo "尝试另一种后缀: $FILE_EXT"
+             IB_URL="${IB_URL%.*}.${FILE_EXT}"
+             if ! wget -qO openwrt-ib.${FILE_EXT} "$IB_URL"; then
+                echo "Error: 再次下载失败！退出。"
+                exit 1
+             fi
+          fi
+          
+          echo "正在解压..."
+          mkdir -p openwrt-ib
+          if [[ "$FILE_EXT" == "tar.zst" ]]; then
+            tar -I zstd -xf openwrt-ib.${FILE_EXT} -C openwrt-ib --strip-components=1
+          else
+            tar -xf openwrt-ib.${FILE_EXT} -C openwrt-ib --strip-components=1
+          fi
+
+      - name: 配置构建参数
+        working-directory: ./openwrt-ib
+        env:
+          LAN_IP: ${{ github.event.inputs.lan_ip }}
+          ENABLE_STORE: ${{ github.event.inputs.enable_store }}
+          ENABLE_DOCKER: ${{ github.event.inputs.enable_docker }}
+          ENABLE_PPPOE: ${{ github.event.inputs.enable_pppoe }}
+          PPPOE_USER: ${{ github.event.inputs.pppoe_user }}
+          PPPOE_PASS: ${{ github.event.inputs.pppoe_pass }}
+        run: |
+          # 准备文件目录
+          mkdir -p files/etc/uci-defaults
+          mkdir -p keys
+          touch custom_packages.txt
+
+          # 执行脚本
+          chmod +x ../scripts/*.sh
+          ../scripts/set_ip.sh
+          # 注意：R619AC 是 NAND Flash，分区大小固定，不需要 set_partition.sh
+          ../scripts/add_docker.sh
+          ../scripts/set_pppoe.sh
+          
+          # 处理 Store (OpenWrt 需要手动处理，iStore 可能不兼容，但尽量集成)
+          if [ "${ENABLE_STORE}" == "true" ]; then
+             echo "正在下载 iStore 离线包..."
+             mkdir -p packages
+             # 使用 wget 递归下载 ipk 文件
+             wget -r -np -nd -A "luci-app-store*.ipk,luci-lib-taskd*.ipk,taskd*.ipk,luci-lib-xterm*.ipk" -P packages https://istore.linkease.com/repo/all/store/ || true
+             
+             if [ "$(ls packages/*.ipk 2>/dev/null | wc -l)" -eq 0 ]; then
+                echo "Warning: iStore packages download failed!"
+             else
+                echo "luci-app-store taskd luci-lib-taskd luci-lib-xterm" >> custom_packages.txt
+             fi
+          fi
+
+          # 组合所有包
+          # 基础包 + Luci + 常用工具
+          # R619AC 基础包: luci, uhttpd, wpad-openssl (WiFi支持), kmod-usb3
+          BASE_PACKAGES="luci luci-base luci-ssl uhttpd uhttpd-mod-ubus \
+          luci-i18n-base-zh-cn luci-i18n-firewall-zh-cn \
+          luci-app-ttyd luci-i18n-ttyd-zh-cn \
+          openssh-sftp-server \
+          bash curl wget-ssl tar unzip bind-dig \
+          kmod-usb-storage kmod-usb-storage-uas kmod-fs-ext4 kmod-fs-vfat kmod-fs-exfat \
+          block-mount fdisk e2fsprogs lsblk parted \
+          wpad-openssl kmod-ath10k-ct ath10k-firmware-qca4019-ct"
+
+          # 获取当前版本
+          VERSION="${{ github.event.inputs.luci_version }}"
+
+          # 24.10+ 版本的 luci-i18n-package-manager-zh-cn 替代了旧版 opkg 中文包
+          if [[ "$VERSION" == "24.10."* ]] || [[ "$VERSION" == "SNAPSHOT" ]]; then
+              BASE_PACKAGES="$BASE_PACKAGES luci-i18n-package-manager-zh-cn"
+          fi
+
+          # 确保 .config 存在
+          [ -f .config ] || touch .config
+          
+          # 读取自定义包
+          CUSTOM_PACKAGES=$(cat custom_packages.txt | tr '\n' ' ')
+          
+          # 设置环境变量
+          # p2w_r619ac 是 R619AC 的 profile 名称 (如果不存在会自动尝试 p2w_r619ac-128m)
+          echo "PACKAGES=$BASE_PACKAGES $CUSTOM_PACKAGES" >> $GITHUB_ENV
+          echo "PROFILE=p2w_r619ac" >> $GITHUB_ENV
+
+      - name: 生成固件
+        working-directory: ./openwrt-ib
+        run: |
+          # 尝试查找 profile
+          if ! make info | grep -q "$PROFILE"; then
+             echo "Warning: Profile '$PROFILE' not found directly."
+             # 尝试模糊匹配
+             MATCHED_PROFILE=$(make info | grep -o "p2w_r619ac.*" | head -n 1 | awk '{print $1}')
+             if [ -n "$MATCHED_PROFILE" ]; then
+                echo "Found matching profile: $MATCHED_PROFILE"
+                PROFILE="$MATCHED_PROFILE"
+             else
+                echo "Error: Could not find a valid profile for R619AC."
+                make info
+                exit 1
+             fi
+          fi
+          
+          make image PROFILE="$PROFILE" PACKAGES="$PACKAGES" FILES="files"
+
+      - name: 整理构建产物
+        run: |
+          mkdir -p firmware
+          # 查找生成的固件
+          find openwrt-ib/bin/targets/ipq40xx/generic -name "*sysupgrade.bin" -exec cp {} firmware/ \;
+          find openwrt-ib/bin/targets/ipq40xx/generic -name "*factory.bin" -exec cp {} firmware/ \;
+          find openwrt-ib/bin/targets/ipq40xx/generic -name "*factory.ubi" -exec cp {} firmware/ \;
+          
+          # 重命名以便识别
+          cd firmware
+          ls -lh
+          
+          # 压缩
+          VERSION="${{ github.event.inputs.luci_version }}"
+          zip -r "OpenWrt_R619AC_${VERSION}.zip" ./*
+
+      - name: 上传固件
+        uses: actions/upload-artifact@v4
+        with:
+          name: OpenWrt_R619AC_Firmware
+          path: firmware/*.zip

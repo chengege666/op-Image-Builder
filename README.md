@@ -2,10 +2,14 @@
 
 这是一个基于 GitHub Actions 的 OpenWrt x86_64 固件自动构建项目。本项目采用 **Image Builder (镜像生成器)** 技术，而非传统的源码编译，能够在几分钟内快速生成定制化的 OpenWrt 固件。
 
+支持设备：
+1.  **x86_64 (软路由)**: 官方 OpenWrt Image Builder，支持自动扩容。
+2.  **P&W R619AC (竞斗云 2.0)**: 官方 OpenWrt Image Builder，适配 128M 闪存。
+
 ## ✨ 主要特性
 
 *   **极速构建**: 使用官方 Image Builder，构建时间通常在 5-20 分钟内。
-*   **高度可定制**: 支持在构建前配置固件大小、LAN IP、OpenWrt 版本等。
+*   **高度可定制**: 支持在构建前配置固件大小(x86)、LAN IP、版本等。
 *   **常用插件集成**:
     *   **iStore 应用商店**: 方便新手安装和管理插件（已解决密钥验证问题）。
     *   **Docker**: 容器化应用支持。
@@ -14,6 +18,8 @@
 *   **自动扩容**: 支持自定义系统分区大小 (1GB/2GB/4GB)，避免空间不足。
 
 ## 🚀 如何使用
+
+### 1. 构建 x86_64 (软路由)
 
 1.  进入本仓库的 **[Actions](https://github.com/your-username/your-repo/actions)** 页面。
 2.  在左侧选择 **"构建 OpenWrt x86_64 (Image Builder)"** 工作流。
@@ -26,6 +32,17 @@
     *   **启用 Docker**: 勾选以集成 Docker 环境。
     *   **启用 PPPoE**: 勾选以预设拨号信息（需填写下方用户名和密码）。
 5.  点击绿色的 **"Run workflow"** 开始构建。
+
+### 2. 构建 P&W R619AC (竞斗云 2.0)
+
+1.  进入本仓库的 **[Actions](https://github.com/your-username/your-repo/actions)** 页面。
+2.  在左侧选择 **"构建 P&W R619AC (OpenWrt)"** 工作流。
+3.  点击 **"Run workflow"**。
+4.  参数说明：
+    *   **版本**: 默认 `24.10.5` (OpenWrt)。
+    *   **Docker**: 勾选后会集成 Docker，但建议插入 USB 3.0 U 盘并挂载为 Docker 数据盘，否则 128M 闪存很容易爆满。
+    *   **注意**: 本固件适配 **OpBoot** (支持 128M 分区)。刷机前请确保已刷入 OpBoot。
+5.  开始构建。
 
 ## 📦 构建产物
 
