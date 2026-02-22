@@ -1,4 +1,4 @@
-# OpenWrt x86_64 自动构建项目 (Image Builder 版)
+# OpenWrt x86_64 自动构建项目 (Image Builder 版)  自己用的扩容固件
 
 这是一个基于 GitHub Actions 的 OpenWrt x86_64 固件自动构建项目。本项目采用 **Image Builder (镜像生成器)** 技术，而非传统的源码编译，能够在几分钟内快速生成定制化的 OpenWrt 固件。
 
