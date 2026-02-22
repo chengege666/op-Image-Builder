@@ -167,27 +167,30 @@ jobs:
               BASE_PACKAGES="$BASE_PACKAGES luci-i18n-package-manager-zh-cn"
           fi
           
+          # 确保 .config 存在
+          [ -f .config ] || touch .config
+          
+          # === 精简构建目标 ===
+          # 默认禁用 Rootfs 压缩包 (tar.gz)
+          sed -i 's/CONFIG_TARGET_ROOTFS_TARGZ=y/# CONFIG_TARGET_ROOTFS_TARGZ is not set/' .config
+          echo "# CONFIG_TARGET_ROOTFS_TARGZ is not set" >> .config
+          
+          # 默认禁用 SquashFS 格式 (x86 常用 Ext4，减少生成文件数量)
+          # sed -i 's/CONFIG_TARGET_ROOTFS_SQUASHFS=y/# CONFIG_TARGET_ROOTFS_SQUASHFS is not set/' .config
+          # echo "# CONFIG_TARGET_ROOTFS_SQUASHFS is not set" >> .config
+          
+          # 默认禁用 ISO
+          sed -i 's/CONFIG_ISO_IMAGES=y/# CONFIG_ISO_IMAGES is not set/' .config
+          echo "# CONFIG_ISO_IMAGES is not set" >> .config
+
           # ISO 生成支持 (可选)
           if [ "${ENABLE_ISO}" == "true" ]; then
-             # 注意：Image Builder 默认使用 .config 文件控制输出格式
-             # 我们需要追加配置到 .config 中 (Image Builder 的 .config 位于根目录或通过 make defconfig 生成)
-             # 但 Image Builder 的机制是 make image 时读取 .config
-             # 这里我们直接修改 .config (如果存在)，或者通过 make image 命令行参数传递 (不支持所有参数)
-             # 最稳妥的方式是追加到 .config
-             
-             # 确保 .config 存在
-             [ -f .config ] || touch .config
-             
-             echo "CONFIG_TARGET_IMAGES_GZIP=y" >> .config
              echo "CONFIG_ISO_IMAGES=y" >> .config
           fi
           
           # Rootfs 生成支持 (可选)
           if [ "${ENABLE_ROOTFS}" == "true" ]; then
              echo "CONFIG_TARGET_ROOTFS_TARGZ=y" >> .config
-             # Rootfs 格式通常不需要分区大小限制，或者需要调整 ROOTFS_PARTSIZE
-             # 如果之前 set_partition.sh 修改了 CONFIG_TARGET_ROOTFS_PARTSIZE，可能会影响
-             # 但主要问题可能是某些包（如内核模块）在 rootfs 模式下的兼容性
           fi
           
           # 读取自定义包
@@ -212,7 +215,7 @@ jobs:
           # 增加 DISABLED_SERVICES 用于禁用不必要的服务自启，可能解决某些脚本在 chroot 下失败的问题
           # 增加 V=s 开启详细日志，以便排查 Error 2 的具体原因
           
-          make image PROFILE="generic" PACKAGES="${{ env.PACKAGES }}" FILES="files" DISABLED_SERVICES="dockerd" V=s
+          make image PROFILE="generic" PACKAGES="${{ env.PACKAGES }}" FILES="files" DISABLED_SERVICES="dockerd"
 
       - name: 整理构建产物
         run: |
