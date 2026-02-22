@@ -35,7 +35,7 @@ on:
         type: boolean
         default: false
       enable_vm_tools:
-        description: '启用虚拟化支持 (QEMU/VMware)'
+        description: '启用虚拟化支持 (PVE/VMware)'
         required: false
         type: boolean
         default: true
@@ -159,7 +159,7 @@ jobs:
               BASE_PACKAGES="$BASE_PACKAGES luci-i18n-package-manager-zh-cn"
           fi
           
-          # 虚拟化支持 (QEMU Guest Agent / VMware Tools)
+          # 虚拟化支持 (PVE/QEMU Guest Agent / VMware Tools)
           if [ "${ENABLE_VM_TOOLS}" == "true" ]; then
              BASE_PACKAGES="$BASE_PACKAGES qemu-ga open-vm-tools"
           fi
