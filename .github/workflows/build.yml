@@ -1,49 +1,49 @@
-name: Build OpenWrt x86_64
+name: 构建 OpenWrt x86_64
 
 on:
   workflow_dispatch:
     inputs:
       firmware_size:
-        description: 'Firmware Size (MB)'
+        description: '固件大小 (MB)'
         required: true
-        default: '256'
+        default: '1024'
         type: choice
         options:
-          - '128'
-          - '256'
-          - '512'
+          - '1024'
+          - '2048'
+          - '4096'
       lan_ip:
-        description: 'LAN IP Address'
+        description: '路由器管理地址 (LAN IP)'
         required: true
         default: '192.168.1.1'
       luci_version:
-        description: 'LuCI Version / Branch'
+        description: 'LuCI 版本 / 分支'
         required: true
-        default: 'Official Stable'
+        default: '官方稳定版'
         type: choice
         options:
-          - 'Official Stable'
-          - 'Master Dev'
+          - '官方稳定版'
+          - 'Master 开发版'
       enable_store:
-        description: 'Enable Store (iStore)'
+        description: '启用应用商店 (iStore)'
         required: false
         type: boolean
         default: false
       enable_docker:
-        description: 'Enable Docker'
+        description: '启用 Docker'
         required: false
         type: boolean
         default: false
       enable_pppoe:
-        description: 'Enable PPPoE Configuration'
+        description: '启用 PPPoE 拨号配置'
         required: false
         type: boolean
         default: false
       pppoe_user:
-        description: 'PPPoE Username'
+        description: 'PPPoE 用户名'
         required: false
       pppoe_pass:
-        description: 'PPPoE Password'
+        description: 'PPPoE 密码'
         required: false
 
 permissions:
@@ -54,10 +54,10 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout
+      - name: 检出代码
         uses: actions/checkout@v4
 
-      - name: Initialize Environment
+      - name: 初始化编译环境
         env:
           DEBIAN_FRONTEND: noninteractive
         run: |
@@ -69,26 +69,26 @@ jobs:
           sudo -E apt-get -qq clean
           df -h
 
-      - name: Clone Source Code
+      - name: 拉取 OpenWrt 源码
         run: |
-          if [ "${{ github.event.inputs.luci_version }}" == "Master Dev" ]; then
+          if [ "${{ github.event.inputs.luci_version }}" == "Master 开发版" ]; then
             git clone -b master --single-branch https://github.com/openwrt/openwrt openwrt
           else
             git clone -b openwrt-23.05 --single-branch https://github.com/openwrt/openwrt openwrt
           fi
 
-      - name: Update Feeds
+      - name: 更新 Feeds
         working-directory: ./openwrt
         run: |
           ./scripts/feeds update -a
           ./scripts/feeds install -a
 
-      - name: Load Custom Configuration
+      - name: 加载自定义配置
         run: |
           cp config/base.config openwrt/.config
           chmod +x scripts/*.sh
 
-      - name: Apply Custom Scripts
+      - name: 执行自定义脚本
         working-directory: ./openwrt
         env:
           LAN_IP: ${{ github.event.inputs.lan_ip }}
@@ -105,7 +105,7 @@ jobs:
           ../scripts/add_store.sh
           ../scripts/set_pppoe.sh
 
-      - name: Cache OpenWrt DL
+      - name: 缓存 OpenWrt DL
         uses: actions/cache@v4
         with:
           path: openwrt/dl
@@ -113,7 +113,7 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-openwrt-dl-
 
-      - name: Download Packages
+      - name: 下载软件包
         working-directory: ./openwrt
         run: |
           make defconfig
@@ -121,19 +121,19 @@ jobs:
           find dl -size -1024c -exec ls -l {} \;
           find dl -size -1024c -exec rm -f {} \;
 
-      - name: Compile Firmware
+      - name: 编译固件
         working-directory: ./openwrt
         run: |
           echo -e "$(nproc) thread compile"
           make -j$(nproc) || make -j1 V=s
 
-      - name: Upload Artifacts
+      - name: 上传构建产物
         uses: actions/upload-artifact@v4
         with:
           name: OpenWrt_Firmware_${{ github.event.inputs.firmware_size }}MB
           path: openwrt/bin/targets/x86/64/*combined*
 
-      - name: Delete Old Workflows
+      - name: 删除旧构建记录
         uses: Mattraks/delete-workflow-runs@v2
         with:
           token: ${{ github.token }}
