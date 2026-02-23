@@ -194,7 +194,7 @@ jobs:
              echo "# CONFIG_ISO_IMAGES is not set" >> .config
           elif [[ "${BUILD_TYPE}" == *"iso"* ]]; then
              echo "CONFIG_ISO_IMAGES=y" >> .config
-             echo "# CONFIG_TARGET_ROOTFS_SQUASHFS is not set" >> .config
+             echo "CONFIG_TARGET_ROOTFS_SQUASHFS=y" >> .config
              echo "# CONFIG_TARGET_ROOTFS_EXT4FS is not set" >> .config
              echo "# CONFIG_TARGET_ROOTFS_TARGZ is not set" >> .config
           fi
