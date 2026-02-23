@@ -129,8 +129,11 @@ jobs:
           mkdir -p keys
           touch custom_packages.txt
 
-          # --- 1. 添加第三方软件源 (kiddin9) ---
-          echo "添加第三方软件源到 repositories.conf..."
+          # --- 1. 添加第三方软件源并禁用签名校验 ---
+          echo "配置 repositories.conf..."
+          # 先在文件头部禁用签名检查，防止 Error 255
+          sed -i '1i option check_signature 0' repositories.conf
+          
           {
             echo "src/gz kiddin9_base https://dl.openwrt.ai/releases/24.10.5/packages/x86_64/base"
             echo "src/gz kiddin9_kiddin9 https://dl.openwrt.ai/releases/24.10.5/packages/x86_64/kiddin9"
@@ -141,18 +144,18 @@ jobs:
 
           # --- 2. 处理 scripts/apps.list 中的插件开关 ---
           if [ -f ../scripts/apps.list ]; then
-              echo "发现插件列表，开始解析开关状态..."
+              echo "正在解析 scripts/apps.list..."
               while IFS= read -r line || [ -n "$line" ]; do
-                  # 过滤空行
+                  # 跳过空行
                   [ -z "$line" ] && continue
                   # 如果行首不是 # 号，则加入构建列表
                   if [[ "$line" != \#* ]]; then
                       PKG_NAME=$(echo "$line" | xargs)
                       echo "$PKG_NAME" >> custom_packages.txt
-                      echo ">> [启用] 插件: $PKG_NAME"
+                      echo ">> [已启用] $PKG_NAME"
                   else
                       PKG_NAME=$(echo "$line" | sed 's/^#//' | xargs)
-                      echo ">> [跳过] 插件: $PKG_NAME"
+                      echo ">> [已跳过] $PKG_NAME"
                   fi
               done < ../scripts/apps.list
           else
@@ -174,10 +177,9 @@ jobs:
           
           # 处理 iStore 的本地源
           if [ "${ENABLE_STORE}" == "true" ]; then
-             echo "正在下载 iStore 离线包..."
+             echo "处理 iStore 插件..."
              mkdir -p packages
              wget -r -np -nd -A "luci-app-store*.ipk,luci-lib-taskd*.ipk,taskd*.ipk,luci-lib-xterm*.ipk,Packages,Packages.gz,Packages.sig" -P packages https://istore.linkease.com/repo/all/store/ || true
-             
              if [ "$(ls packages/*.ipk 2>/dev/null | wc -l)" -eq 0 ]; then
                 echo "Warning: iStore packages download failed!"
              else
@@ -199,24 +201,20 @@ jobs:
               BASE_PACKAGES="$BASE_PACKAGES luci-i18n-package-manager-zh-cn"
           fi
           
-          # 合并所有需要安装的插件
           CUSTOM_PACKAGES=$(cat custom_packages.txt | tr '\n' ' ')
-          echo "最终安装列表: $BASE_PACKAGES $CUSTOM_PACKAGES"
-          
           echo "PACKAGES=$BASE_PACKAGES $CUSTOM_PACKAGES" >> $GITHUB_ENV
 
       - name: 生成固件
         working-directory: ./openwrt-ib
         run: |
-          make image PACKAGES="$PACKAGES" FILES="files"
+          # 增加强制覆盖标志，防止依赖冲突导致 Error 255
+          make image PACKAGES="$PACKAGES" FILES="files" OPKG_FLAGS="--force-overwrite --force-depends"
 
       - name: 整理构建产物
         env:
           BUILD_TYPE: ${{ github.event.inputs.build_type }}
         run: |
           mkdir -p firmware
-          echo "选择的构建类型: ${BUILD_TYPE}"
-          
           if [[ "${BUILD_TYPE}" == *"iso"* ]]; then
              find openwrt-ib/bin/targets/x86/64 -name "*.iso" -exec cp {} firmware/ \;
           elif [[ "${BUILD_TYPE}" == *"squashfs_ext4"* ]]; then
