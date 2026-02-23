@@ -16,6 +16,7 @@
     *   **PPPoE**: 支持预设拨号账号密码。
 *   **中文界面**: 默认集成简体中文语言包 (LuCI, Firewall)。
 *   **自动扩容**: 支持自定义系统分区大小 (1GB/2GB/4GB)，避免空间不足。
+*   **PVE 部署神器**: 推荐搭配 [PVE 镜像转换工具 (pvezh)](https://github.com/chengege666/pvezh) 使用，一键导入固件到 Proxmox VE。
 
 ## 🚀 如何使用
 
