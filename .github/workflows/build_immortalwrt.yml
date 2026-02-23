@@ -85,15 +85,25 @@ jobs:
              FILE_EXT="tar.xz"
           fi
           
-          IB_URL="https://downloads.immortalwrt.org/releases/${VER}/targets/x86/64/immortalwrt-imagebuilder-${VER}-x86-64.Linux-x86_64.${FILE_EXT}"
+          # 定义下载源
+          IB_URL_OFFICIAL="https://downloads.immortalwrt.org/releases/${VER}/targets/x86/64/immortalwrt-imagebuilder-${VER}-x86-64.Linux-x86_64.${FILE_EXT}"
+          IB_URL_SJTUG="https://mirrors.sjtug.sjtu.edu.cn/immortalwrt/releases/${VER}/targets/x86/64/immortalwrt-imagebuilder-${VER}-x86-64.Linux-x86_64.${FILE_EXT}"
           
-          echo "正在下载 Image Builder..."
-          echo "版本: $VER"
-          echo "下载地址: $IB_URL"
+          echo "正在尝试从官方源下载 Image Builder..."
+          echo "官方源地址: $IB_URL_OFFICIAL"
           
-          if ! wget -qO openwrt-ib.${FILE_EXT} "$IB_URL"; then
-             echo "Error: 下载失败！请检查版本号 $VER 是否存在。"
-             exit 1
+          # 尝试下载官方源 (设置超时和重试次数，避免卡死)
+          if wget --timeout=20 --tries=2 -O openwrt-ib.${FILE_EXT} "$IB_URL_OFFICIAL"; then
+             echo "官方源下载成功。"
+          else
+             echo "官方源下载失败或超时，正在切换到 SJTUG 镜像源..."
+             echo "SJTUG 镜像源地址: $IB_URL_SJTUG"
+             
+             if ! wget -O openwrt-ib.${FILE_EXT} "$IB_URL_SJTUG"; then
+                echo "Error: SJTUG 镜像源下载也失败！请检查版本号 $VER 是否存在。"
+                exit 1
+             fi
+             echo "SJTUG 镜像源下载成功。"
           fi
           
           echo "正在解压..."
