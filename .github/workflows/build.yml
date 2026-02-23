@@ -176,28 +176,10 @@ jobs:
           [ -f .config ] || touch .config
           
           # === 配置构建类型 ===
-          # 清理默认设置，避免冲突
-          sed -i '/CONFIG_TARGET_ROOTFS_TARGZ/d' .config
-          sed -i '/CONFIG_TARGET_ROOTFS_SQUASHFS/d' .config
-          sed -i '/CONFIG_TARGET_ROOTFS_EXT4FS/d' .config
-          sed -i '/CONFIG_ISO_IMAGES/d' .config
-
-          if [[ "${BUILD_TYPE}" == *"squashfs_ext4"* ]]; then
-             echo "CONFIG_TARGET_ROOTFS_SQUASHFS=y" >> .config
-             echo "CONFIG_TARGET_ROOTFS_EXT4FS=y" >> .config
-             echo "# CONFIG_TARGET_ROOTFS_TARGZ is not set" >> .config
-             echo "# CONFIG_ISO_IMAGES is not set" >> .config
-          elif [[ "${BUILD_TYPE}" == *"rootfs"* ]]; then
-             echo "CONFIG_TARGET_ROOTFS_TARGZ=y" >> .config
-             echo "# CONFIG_TARGET_ROOTFS_SQUASHFS is not set" >> .config
-             echo "# CONFIG_TARGET_ROOTFS_EXT4FS is not set" >> .config
-             echo "# CONFIG_ISO_IMAGES is not set" >> .config
-          elif [[ "${BUILD_TYPE}" == *"iso"* ]]; then
+          # 仅在 ISO 模式下启用 ISO 选项，其他保持默认
+          # 注意：不要强制禁用默认格式，避免依赖报错
+          if [[ "${BUILD_TYPE}" == *"iso"* ]]; then
              echo "CONFIG_ISO_IMAGES=y" >> .config
-             echo "CONFIG_TARGET_ROOTFS_SQUASHFS=y" >> .config
-             # 移除对其他格式的强制禁用，避免依赖问题
-             # echo "# CONFIG_TARGET_ROOTFS_EXT4FS is not set" >> .config
-             # echo "# CONFIG_TARGET_ROOTFS_TARGZ is not set" >> .config
           fi
           
           # 读取自定义包
