@@ -179,7 +179,9 @@ jobs:
           # 根据选择的构建类型，加载对应的配置文件
           
           # 1. 复制基础配置
-          cp ../config/base.config .config
+          # 注意：ImageBuilder 自带 .config，我们应该追加而不是覆盖
+          # cp ../config/base.config .config  <-- 错误做法，会覆盖掉内核版本信息
+          cat ../config/base.config >> .config
           
           # 2. 确定配置标识符
           if [[ "${BUILD_TYPE}" == *"squashfs_ext4"* ]]; then
