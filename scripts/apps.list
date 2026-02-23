@@ -1,6 +1,0 @@
-# 在这里管理插件，去掉 # 号就编译，加上 # 号就不编
-luci-app-argon-config
-＃luci-app-vssr
-#luci-app-openclash
-#luci-app-adguardhome
-＃luci-app-turboacc
