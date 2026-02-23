@@ -183,9 +183,7 @@ jobs:
           # cp ../config/base.config .config  <-- 错误做法，会覆盖掉内核版本信息
           cat ../config/base.config >> .config
           
-          # 2. 仅在需要时启用 ISO 镜像
-          # ImageBuilder 对文件系统格式有严格依赖，强制禁用默认格式会导致构建失败。
-          # 解决方案：全部构建，然后在发布阶段仅保留用户选择的格式。
+          # 2. 仅在 ISO 模式下启用 ISO 选项
           if [[ "${BUILD_TYPE}" == *"iso"* ]]; then
              echo "Enabling ISO images..."
              echo "CONFIG_ISO_IMAGES=y" >> .config
