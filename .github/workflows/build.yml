@@ -213,13 +213,16 @@ jobs:
         run: |
           mkdir -p firmware
           
+          echo "Listing all generated files for debug:"
+          ls -R openwrt-ib/bin/targets/x86/64 || true
+          
           if [[ "${BUILD_TYPE}" == *"iso"* ]]; then
              echo "ISO 模式已启用，仅保留 ISO 文件..."
              find openwrt-ib/bin/targets/x86/64 -name "*.iso" -exec cp {} firmware/ \;
           elif [[ "${BUILD_TYPE}" == *"squashfs_ext4"* ]]; then
              echo "常规模式，保留 img.gz 文件..."
-             # 排除 rootfs.img.gz (非 combined 镜像)
-             find openwrt-ib/bin/targets/x86/64 -name "*-combined-*.img.gz" -exec cp {} firmware/ \;
+             # 保留所有 img.gz 文件，但排除 rootfs.img.gz
+             find openwrt-ib/bin/targets/x86/64 -name "*.img.gz" ! -name "*rootfs.img.gz" -exec cp {} firmware/ \;
           elif [[ "${BUILD_TYPE}" == *"rootfs"* ]]; then
              echo "Rootfs 模式，保留 tar.gz 文件..."
              find openwrt-ib/bin/targets/x86/64 -name "*.tar.gz" -exec cp {} firmware/ \;
