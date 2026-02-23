@@ -219,6 +219,14 @@ jobs:
 
              sed -i 's/CONFIG_VMDK_IMAGES=y/# CONFIG_VMDK_IMAGES is not set/' .config
              echo "# CONFIG_VMDK_IMAGES is not set" >> .config
+             
+             # 确保其他格式也被禁用 (QCOW2, VHDX 等)
+             sed -i 's/CONFIG_QCOW2_IMAGES=y/# CONFIG_QCOW2_IMAGES is not set/' .config
+             echo "# CONFIG_QCOW2_IMAGES is not set" >> .config
+             sed -i 's/CONFIG_VHDX_IMAGES=y/# CONFIG_VHDX_IMAGES is not set/' .config
+             echo "# CONFIG_VHDX_IMAGES is not set" >> .config
+             sed -i 's/CONFIG_PC_IMAGES=y/# CONFIG_PC_IMAGES is not set/' .config
+             echo "# CONFIG_PC_IMAGES is not set" >> .config
           else
              # 未启用 Rootfs，则构建 EXT4 和 SquashFS
              echo "CONFIG_TARGET_ROOTFS_EXT4FS=y" >> .config
@@ -230,6 +238,14 @@ jobs:
              
              sed -i 's/CONFIG_VMDK_IMAGES=y/# CONFIG_VMDK_IMAGES is not set/' .config
              echo "# CONFIG_VMDK_IMAGES is not set" >> .config
+             
+             # 确保其他格式也被禁用 (QCOW2, VHDX 等)
+             sed -i 's/CONFIG_QCOW2_IMAGES=y/# CONFIG_QCOW2_IMAGES is not set/' .config
+             echo "# CONFIG_QCOW2_IMAGES is not set" >> .config
+             sed -i 's/CONFIG_VHDX_IMAGES=y/# CONFIG_VHDX_IMAGES is not set/' .config
+             echo "# CONFIG_VHDX_IMAGES is not set" >> .config
+             sed -i 's/CONFIG_PC_IMAGES=y/# CONFIG_PC_IMAGES is not set/' .config
+             echo "# CONFIG_PC_IMAGES is not set" >> .config
           fi
           
           # 读取自定义包
