@@ -85,25 +85,15 @@ jobs:
              FILE_EXT="tar.xz"
           fi
           
-          # 定义下载源
-          IB_URL_OFFICIAL="https://downloads.immortalwrt.org/releases/${VER}/targets/x86/64/immortalwrt-imagebuilder-${VER}-x86-64.Linux-x86_64.${FILE_EXT}"
-          IB_URL_SJTUG="https://mirrors.sjtug.sjtu.edu.cn/immortalwrt/releases/${VER}/targets/x86/64/immortalwrt-imagebuilder-${VER}-x86-64.Linux-x86_64.${FILE_EXT}"
+          # 定义下载源 (直接使用 USTC 镜像源)
+          IB_URL="https://mirrors.ustc.edu.cn/immortalwrt/releases/${VER}/targets/x86/64/immortalwrt-imagebuilder-${VER}-x86-64.Linux-x86_64.${FILE_EXT}"
           
-          echo "正在尝试从官方源下载 Image Builder..."
-          echo "官方源地址: $IB_URL_OFFICIAL"
+          echo "正在下载 Image Builder..."
+          echo "镜像源地址: $IB_URL"
           
-          # 尝试下载官方源 (设置超时和重试次数，避免卡死)
-          if wget --timeout=20 --tries=2 -O openwrt-ib.${FILE_EXT} "$IB_URL_OFFICIAL"; then
-             echo "官方源下载成功。"
-          else
-             echo "官方源下载失败或超时，正在切换到 SJTUG 镜像源..."
-             echo "SJTUG 镜像源地址: $IB_URL_SJTUG"
-             
-             if ! wget -O openwrt-ib.${FILE_EXT} "$IB_URL_SJTUG"; then
-                echo "Error: SJTUG 镜像源下载也失败！请检查版本号 $VER 是否存在。"
-                exit 1
-             fi
-             echo "SJTUG 镜像源下载成功。"
+          if ! wget -O openwrt-ib.${FILE_EXT} "$IB_URL"; then
+             echo "Error: 下载失败！请检查版本号 $VER 是否存在。"
+             exit 1
           fi
           
           echo "正在解压..."
@@ -127,19 +117,12 @@ jobs:
           PPPOE_USER: ${{ github.event.inputs.pppoe_user }}
           PPPOE_PASS: ${{ github.event.inputs.pppoe_pass }}
         run: |
-          # === 智能切换软件源 ===
-          # 检查官方源连通性 (尝试访问官方下载站)
-          echo "正在检查官方软件源连通性..."
-          # 使用 curl 测试连接 (5秒超时，只请求 HEAD)
-          if curl -s --head --fail --connect-timeout 5 "https://downloads.immortalwrt.org/" > /dev/null; then
-             echo "官方源连接正常，使用官方源构建。"
-          else
-             echo "官方源连接失败或响应慢，自动切换至 SJTUG 镜像源..."
-             # 替换 downloads.immortalwrt.org
-             sed -i 's|https://downloads.immortalwrt.org|https://mirrors.sjtug.sjtu.edu.cn/immortalwrt|g' repositories.conf
-             # 替换可能存在的重定向域名 (如 kyarucloud.moe)
-             sed -i 's|https://immortalwrt.kyarucloud.moe|https://mirrors.sjtug.sjtu.edu.cn/immortalwrt|g' repositories.conf
-          fi
+          # === 强制替换软件源 ===
+          echo "强制替换官方源为 USTC 镜像源..."
+          # 替换 downloads.immortalwrt.org
+          sed -i 's|https://downloads.immortalwrt.org|https://mirrors.ustc.edu.cn/immortalwrt|g' repositories.conf
+          # 替换可能存在的重定向域名 (如 kyarucloud.moe)
+          sed -i 's|https://immortalwrt.kyarucloud.moe|https://mirrors.ustc.edu.cn/immortalwrt|g' repositories.conf
           
           # 准备文件目录
           mkdir -p files/etc/uci-defaults
