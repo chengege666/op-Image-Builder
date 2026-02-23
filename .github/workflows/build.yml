@@ -57,7 +57,7 @@ on:
         required: false
 
 permissions:
-  contents: write
+  contents: read
   actions: write
 
 jobs:
@@ -235,22 +235,6 @@ jobs:
         with:
           name: OpenWrt_Firmware_${{ github.event.inputs.luci_version }}_${{ github.event.inputs.firmware_size }}MB
           path: firmware/*
-
-      - name: 生成 Release 标签
-        run: echo "DATE=$(date +'%Y.%m.%d-%H%M')" >> $GITHUB_ENV
-
-      - name: 发布到 Release
-        uses: softprops/action-gh-release@v1
-        if: !cancelled()
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          tag_name: OpenWrt_Build_${{ env.DATE }}
-          body: |
-            这是自动编译生成的 OpenWrt 固件。
-            构建时间：${{ env.DATE }}
-          allowUpdates: true
-          files: firmware/*
 
       - name: 删除旧构建记录
         uses: Mattraks/delete-workflow-runs@v2
