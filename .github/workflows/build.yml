@@ -34,6 +34,11 @@ on:
           - '1024'
           - '2048'
           - '4096'
+          - 'custom'
+      custom_firmware_size:
+        description: '自定义固件大小 (MB) [当上面的固件大小选择 custom 时生效]'
+        required: false
+        default: '5120'
       lan_ip:
         description: '路由器管理地址 (LAN IP)'
         required: true
@@ -118,6 +123,7 @@ jobs:
         env:
           LAN_IP: ${{ github.event.inputs.lan_ip }}
           FIRMWARE_SIZE: ${{ github.event.inputs.firmware_size }}
+          CUSTOM_FIRMWARE_SIZE: ${{ github.event.inputs.custom_firmware_size }}
           ENABLE_STORE: ${{ github.event.inputs.enable_store }}
           ENABLE_DOCKER: ${{ github.event.inputs.enable_docker }}
           BUILD_TYPE: ${{ github.event.inputs.build_type }}
@@ -125,6 +131,11 @@ jobs:
           PPPOE_USER: ${{ github.event.inputs.pppoe_user }}
           PPPOE_PASS: ${{ github.event.inputs.pppoe_pass }}
         run: |
+          if [ "${FIRMWARE_SIZE}" == "custom" ]; then
+             echo "Using custom firmware size: ${CUSTOM_FIRMWARE_SIZE}"
+             export FIRMWARE_SIZE="${CUSTOM_FIRMWARE_SIZE}"
+          fi
+          
           mkdir -p files/etc/uci-defaults
           mkdir -p keys
           touch custom_packages.txt
