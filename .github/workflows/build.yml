@@ -142,18 +142,18 @@ jobs:
              [ -f ../scripts/set_pppoe.sh ] && ../scripts/set_pppoe.sh
           fi
           
-          # 【修复点 1】: 处理 iStore 的本地源，必须同时拉取 Packages.gz 索引并写入 repositories.conf
+          # 处理 iStore 的本地源，拉取 Packages.gz 索引并写入 repositories.conf
           if [ "${ENABLE_STORE}" == "true" ]; then
              echo "正在下载 iStore 离线包..."
              mkdir -p packages
-             # 下载 ipk 及 对应的索引文件 (Packages, Packages.gz, Packages.sig)
+             # 下载 ipk 及 对应的索引文件
              wget -r -np -nd -A "luci-app-store*.ipk,luci-lib-taskd*.ipk,taskd*.ipk,luci-lib-xterm*.ipk,Packages,Packages.gz,Packages.sig" -P packages https://istore.linkease.com/repo/all/store/ || true
              
              if [ "$(ls packages/*.ipk 2>/dev/null | wc -l)" -eq 0 ]; then
                 echo "Warning: iStore packages download failed!"
              else
                 echo "luci-app-store taskd luci-lib-taskd luci-lib-xterm" >> custom_packages.txt
-                # 关键：向 opkg 告知本地目录，否则 make image 无法找到离线包
+                # 向 opkg 告知本地目录
                 echo "src custom file://$(pwd)/packages" >> repositories.conf
              fi
           fi
@@ -172,7 +172,7 @@ jobs:
           
           [ -f .config ] || touch .config
           
-          # 【修复点 2】: 防止没有 config 目录时 cat 抛出致命错误导致 Workflow 崩溃
+          # 防止没有 config 目录时报错
           if [ -f ../config/base.config ]; then
              cat ../config/base.config >> .config
           else
@@ -194,35 +194,48 @@ jobs:
           make image PACKAGES="$PACKAGES" FILES="files"
 
       - name: 整理构建产物
+        env:
+          # 【核心修复】：注入判断必须的环境变量
+          BUILD_TYPE: ${{ github.event.inputs.build_type }}
         run: |
           mkdir -p firmware
           
-          # 增加调试信息，输出编译目录内容，方便以后排查
+          echo "=== 诊断信息 ==="
+          echo "选择的构建类型: ${BUILD_TYPE}"
+          
           echo "=== Image Builder 输出的构建结果 ==="
           ls -lh openwrt-ib/bin/targets/x86/64/ || true
           echo "==================================="
           
-          # 【修复点 3】: 兼容 OpenWrt 24.10+ 的多格式扩展名 (.tar.zst, .img.zst)
+          # 根据构建类型筛选并复制文件
           if [[ "${BUILD_TYPE}" == *"iso"* ]]; then
-             echo "ISO 模式已启用，仅保留 ISO 文件..."
+             echo "➡️ ISO 模式已启用，保留 ISO 文件..."
              find openwrt-ib/bin/targets/x86/64 -name "*.iso" -exec cp {} firmware/ \;
           elif [[ "${BUILD_TYPE}" == *"squashfs_ext4"* ]]; then
-             echo "常规模式，保留 .img.gz 或 .img.zst 文件..."
+             echo "➡️ 常规模式，保留 .img.* 固件文件..."
+             # 提取 combined 固件，排除 rootfs 单独镜像
              find openwrt-ib/bin/targets/x86/64 -name "*.img.*" ! -name "*rootfs*" -exec cp {} firmware/ \;
           elif [[ "${BUILD_TYPE}" == *"rootfs"* ]]; then
-             echo "Rootfs 模式，保留 .tar.* (如 tar.gz/tar.zst) 文件..."
-             find openwrt-ib/bin/targets/x86/64 -name "*.tar.*" -exec cp {} firmware/ \;
-             # Rootfs 有时也会输出成 img，这里一并保留
-             find openwrt-ib/bin/targets/x86/64 -name "*rootfs.img*" -exec cp {} firmware/ \;
+             echo "➡️ Rootfs 模式，保留 rootfs 文件..."
+             find openwrt-ib/bin/targets/x86/64 -name "*rootfs.tar.*" -exec cp {} firmware/ \;
+             find openwrt-ib/bin/targets/x86/64 -name "*rootfs.img.*" -exec cp {} firmware/ \;
+          else
+             echo "⚠️ 未知的构建类型！将复制所有镜像文件..."
+             find openwrt-ib/bin/targets/x86/64 -name "*.img.*" -exec cp {} firmware/ \;
           fi
+          
+          # 顺便提取配置清单和校验文件（刷机很有用）
+          echo "➡️ 提取附加信息文件..."
+          cp openwrt-ib/bin/targets/x86/64/sha256sums firmware/ 2>/dev/null || true
+          cp openwrt-ib/bin/targets/x86/64/profiles.json firmware/ 2>/dev/null || true
           
           cd firmware
           echo "=== 准备打包的文件 ==="
           ls -lh
           
-          # 【修复点 4】: 避免因空目录导致 zip 爆出 exit code 12。做前置拦截拦截并抛出人类可读的错误
+          # 最终安全拦截
           if [ -z "$(ls -A .)" ]; then
-              echo "Error: 在 firmware 目录中没有找到任何文件！可能是生成失败或后缀名不匹配。"
+              echo "Error: 在 firmware 目录中没有找到任何文件！请检查上面 if 匹配逻辑。"
               exit 1
           fi
           
