@@ -153,7 +153,11 @@ jobs:
              if [ "$(ls packages/*.ipk 2>/dev/null | wc -l)" -eq 0 ]; then
                 echo "Warning: iStore packages download failed!"
              else
-                echo "luci-app-store taskd luci-lib-taskd luci-lib-xterm" >> custom_packages.txt
+                # 关键修复：使用 ipk 文件的绝对路径安装，而不是包名
+                # Image Builder 无法在官方源找到这些包，必须指定本地文件路径
+                echo "Adding local ipk files to PACKAGES..."
+                # 使用 find 获取绝对路径并追加到 custom_packages.txt
+                find "$PWD/packages" -name "*.ipk" >> custom_packages.txt
              fi
           fi
 
@@ -248,7 +252,7 @@ jobs:
           # 增加 DISABLED_SERVICES 用于禁用不必要的服务自启，可能解决某些脚本在 chroot 下失败的问题
           # 增加 V=s 开启详细日志，以便排查 Error 2 的具体原因
           
-          make image PROFILE="generic" PACKAGES="${{ env.PACKAGES }}" FILES="files" DISABLED_SERVICES="dockerd"
+          make image PROFILE="generic" PACKAGES="${{ env.PACKAGES }}" FILES="files" DISABLED_SERVICES="dockerd" V=s
 
       - name: 整理构建产物
         run: |
