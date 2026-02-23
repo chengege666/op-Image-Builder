@@ -1,0 +1,98 @@
+name: 构建 HK1 Box (S905X3) OpenWrt
+
+on:
+  workflow_dispatch:
+    inputs:
+      luci_version:
+        description: 'OpenWrt 版本'
+        required: true
+        default: '24.10.5'
+        type: choice
+        options:
+          - '24.10.5'
+          - 'SNAPSHOT'
+      lan_ip:
+        description: '路由器管理地址 (LAN IP)'
+        required: true
+        default: '192.168.1.1'
+
+permissions:
+  contents: write
+  actions: write
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 初始化环境
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential libncurses-dev zlib1g-dev gawk git gettext libssl-dev xsltproc rsync wget unzip python3 python3-setuptools python3-pyelftools zstd
+
+      - name: 下载 Image Builder
+        run: |
+          VERSION="${{ github.event.inputs.luci_version }}"
+          if [ "$VERSION" == "SNAPSHOT" ]; then
+             IB_URL="https://downloads.openwrt.org/snapshots/targets/amlogic/meson/openwrt-imagebuilder-amlogic-meson.Linux-x86_64.tar.zst"
+          else
+             IB_URL="https://downloads.openwrt.org/releases/${VERSION}/targets/amlogic/meson/openwrt-imagebuilder-${VERSION}-amlogic-meson.Linux-x86_64.tar.zst"
+          fi
+          mkdir -p openwrt-ib
+          wget -qO- "$IB_URL" | tar -I zstd -xf - -C openwrt-ib --strip-components=1
+
+      - name: 配置系统与插件
+        working-directory: ./openwrt-ib
+        run: |
+          # 1. 设置 IP 地址
+          mkdir -p files/etc/uci-defaults
+          cat <<EOF > files/etc/uci-defaults/99-custom-settings
+          #!/bin/sh
+          uci set network.lan.ipaddr='${{ github.event.inputs.lan_ip }}'
+          uci commit network
+          exit 0
+          EOF
+          chmod +x files/etc/uci-defaults/99-custom-settings
+
+          # 2. 定义插件列表 (针对盒子优化的精简版)
+          # 注意：去掉了 x86 专用的硬件驱动
+          BASE_PACKAGES="luci luci-base luci-ssl uhttpd uhttpd-mod-ubus \
+          luci-i18n-base-zh-cn luci-i18n-firewall-zh-cn \
+          luci-app-ttyd luci-i18n-ttyd-zh-cn \
+          bash curl wget-ssl tar unzip lsblk fdisk e2fsprogs"
+          
+          echo "PACKAGES=$BASE_PACKAGES" >> $GITHUB_ENV
+
+      - name: 生成 Rootfs
+        working-directory: ./openwrt-ib
+        run: |
+          make image PROFILE="generic" PACKAGES="$PACKAGES" FILES="files"
+          
+          # 将生成的 rootfs 准备好交给打包工具
+          mkdir -p ../ready_to_pack
+          cp bin/targets/amlogic/meson/*.tar.gz ../ready_to_pack/rootfs.tar.gz
+
+      - name: 打包为 U 盘镜像 (Ophub 核心步骤)
+        uses: ophub/amlogic-s9xxx-openwrt@main
+        with:
+          openwrt_path: ready_to_pack/rootfs.tar.gz
+          openwrt_board: hk1box
+          openwrt_kernel: 6.6.y
+          auto_generate_kernel: v6.6.y
+
+      - name: 整理并上传固件
+        run: |
+          mkdir -p firmware
+          # 查找打包好的 img.gz 文件并移动
+          find out/ -name "*.img.gz" -exec mv {} firmware/ \;
+          cd firmware
+          # 重命名一下方便识别
+          for f in *.img.gz; do mv "$f" "OpenWrt_${{ github.event.inputs.luci_version }}_HK1Box_S905X3.img.gz"; done
+
+      - name: 上传 Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: HK1Box-OpenWrt-Image
+          path: firmware/*
