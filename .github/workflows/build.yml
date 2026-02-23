@@ -127,7 +127,13 @@ jobs:
           # 执行脚本
           chmod +x ../scripts/*.sh
           ../scripts/set_ip.sh
-          ../scripts/set_partition.sh
+          
+          if [ "${ENABLE_ROOTFS}" == "true" ]; then
+              echo "Rootfs enabled, skipping partition size setting."
+          else
+              ../scripts/set_partition.sh
+          fi
+
           ../scripts/add_docker.sh
           ../scripts/set_pppoe.sh
           
@@ -208,9 +214,7 @@ jobs:
           # 尝试增加 V=s 查看详细日志 (但这里为了界面整洁先不加)
           # 关键点：rootfs 生成时，如果指定了 PACKAGES，某些包可能无法打包进 rootfs
           
-          # 临时修复：为了确保构建成功，如果启用 rootfs，则尝试不指定固件大小（rootfs 是压缩包，大小自适应）
-          # 但 set_partition.sh 是全局生效的。
-          # 错误可能来自 block-mount 在 rootfs 环境下的配置脚本失败。
+          # 注意：如果启用了 Rootfs，set_partition.sh 已被跳过，以避免构建错误。
           
           # 增加 DISABLED_SERVICES 用于禁用不必要的服务自启，可能解决某些脚本在 chroot 下失败的问题
           # 增加 V=s 开启详细日志，以便排查 Error 2 的具体原因
