@@ -1,0 +1,291 @@
+name: 构建 ImmortalWrt x86-64 (Image Builder)
+
+on:
+  workflow_dispatch:
+    inputs:
+      build_type:
+        description: '固件构建类型'
+        required: true
+        default: 'squashfs_ext4 (物理机/通用)'
+        type: choice
+        options:
+          - 'squashfs_ext4 (物理机/通用)'
+          - 'iso (虚拟机/光盘丨不支持修改 IP)'
+          - 'rootfs (容器/LXC)'
+      immortalwrt_version:
+        description: 'ImmortalWrt 版本'
+        required: true
+        default: '24.10.5'
+        type: choice
+        options:
+          - '24.10.5'
+          - 'SNAPSHOT'
+      auto_release:
+        description: '构建成功后是否自动发布到 GitHub Release'
+        required: false
+        type: boolean
+        default: false
+      firmware_size:
+        description: '固件大小 (MB) [若选 Rootfs 则此项无效]'
+        required: true
+        default: '1024'
+        type: choice
+        options:
+          - '1024'
+          - '2048'
+          - '4096'
+          - 'custom'
+      custom_firmware_size:
+        description: '自定义固件大小 (MB) [当上面的固件大小选择 custom 时生效]'
+        required: false
+        default: '5120'
+      lan_ip:
+        description: '路由器管理地址 (LAN IP)'
+        required: true
+        default: '192.168.1.1'
+      enable_store:
+        description: '启用应用商店 (iStore)'
+        required: false
+        type: boolean
+        default: false
+      enable_docker:
+        description: '启用 Docker'
+        required: false
+        type: boolean
+        default: false
+      enable_pppoe:
+        description: '启用 PPPoE 拨号配置'
+        required: false
+        type: boolean
+        default: false
+      pppoe_user:
+        description: 'PPPoE 用户名'
+        required: false
+      pppoe_pass:
+        description: 'PPPoE 密码'
+        required: false
+
+permissions:
+  contents: write
+  actions: write
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 初始化构建环境
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential libncurses-dev zlib1g-dev gawk git gettext libssl-dev xsltproc rsync wget unzip python3 python3-setuptools python3-pyelftools zstd genisoimage xorriso mtools
+
+      - name: 获取 ImmortalWrt 版本
+        id: get_version
+        run: |
+          VERSION="${{ github.event.inputs.immortalwrt_version }}"
+          echo "VERSION=$VERSION" >> $GITHUB_ENV
+
+      - name: 下载 ImmortalWrt Image Builder
+        run: |
+          if [ "$VERSION" == "SNAPSHOT" ]; then
+             FILE_EXT="tar.zst"
+             IB_URL="https://downloads.immortalwrt.org/snapshots/targets/x86/64/immortalwrt-imagebuilder-x86-64.Linux-x86_64.${FILE_EXT}"
+          else
+             if [[ "$VERSION" == "24.10."* ]]; then
+                FILE_EXT="tar.zst"
+             else
+                FILE_EXT="tar.xz"
+             fi
+             IB_URL="https://downloads.immortalwrt.org/releases/${VERSION}/targets/x86/64/immortalwrt-imagebuilder-${VERSION}-x86-64.Linux-x86_64.${FILE_EXT}"
+          fi
+          
+          echo "正在下载 ImmortalWrt Image Builder..."
+          echo "版本：$VERSION"
+          echo "下载地址：$IB_URL"
+          
+          if ! wget -qO immortalwrt-ib.${FILE_EXT} "$IB_URL"; then
+             echo "Error: 下载失败！请检查版本号 $VERSION 是否存在。"
+             echo "尝试使用 OpenWrt 镜像源作为备选..."
+             if [ "$VERSION" == "SNAPSHOT" ]; then
+                IB_URL="https://downloads.openwrt.org/snapshots/targets/x86/64/openwrt-imagebuilder-x86-64.Linux-x86_64.${FILE_EXT}"
+             else
+                IB_URL="https://downloads.openwrt.org/releases/${VERSION}/targets/x86/64/openwrt-imagebuilder-${VERSION}-x86-64.Linux-x86_64.${FILE_EXT}"
+             fi
+             if ! wget -qO immortalwrt-ib.${FILE_EXT} "$IB_URL"; then
+                echo "Error: 备选下载也失败！退出。"
+                exit 1
+             fi
+          fi
+          
+          echo "正在解压..."
+          mkdir -p immortalwrt-ib
+          if [[ "$FILE_EXT" == "tar.zst" ]]; then
+            tar -I zstd -xf immortalwrt-ib.${FILE_EXT} -C immortalwrt-ib --strip-components=1
+          else
+            tar -xf immortalwrt-ib.${FILE_EXT} -C immortalwrt-ib --strip-components=1
+          fi
+
+      - name: 配置构建参数
+        working-directory: ./immortalwrt-ib
+        env:
+          LAN_IP: ${{ github.event.inputs.lan_ip }}
+          FIRMWARE_SIZE: ${{ github.event.inputs.firmware_size }}
+          CUSTOM_FIRMWARE_SIZE: ${{ github.event.inputs.custom_firmware_size }}
+          ENABLE_STORE: ${{ github.event.inputs.enable_store }}
+          ENABLE_DOCKER: ${{ github.event.inputs.enable_docker }}
+          BUILD_TYPE: ${{ github.event.inputs.build_type }}
+          ENABLE_PPPOE: ${{ github.event.inputs.enable_pppoe }}
+          PPPOE_USER: ${{ github.event.inputs.pppoe_user }}
+          PPPOE_PASS: ${{ github.event.inputs.pppoe_pass }}
+        run: |
+          if [ "${FIRMWARE_SIZE}" == "custom" ]; then
+             echo "Using custom firmware size: ${CUSTOM_FIRMWARE_SIZE}"
+             export FIRMWARE_SIZE="${CUSTOM_FIRMWARE_SIZE}"
+          fi
+          echo "FIRMWARE_SIZE=$FIRMWARE_SIZE" >> $GITHUB_ENV
+          
+          mkdir -p files/etc/uci-defaults
+          mkdir -p keys
+          touch custom_packages.txt
+
+          # 确保脚本存在并赋予执行权限
+          if ls ../scripts/*.sh 1> /dev/null 2>&1; then
+             chmod +x ../scripts/*.sh
+             [ -f ../scripts/set_ip.sh ] && ../scripts/set_ip.sh
+             
+             if [[ "${BUILD_TYPE}" != *"rootfs"* ]] && [ -f ../scripts/set_partition.sh ]; then
+                 ../scripts/set_partition.sh
+             fi
+
+             [ -f ../scripts/add_docker.sh ] && ../scripts/add_docker.sh
+             [ -f ../scripts/set_pppoe.sh ] && ../scripts/set_pppoe.sh
+          fi
+          
+          # 处理 iStore 的本地源，拉取 Packages.gz 索引并写入 repositories.conf
+          if [ "${ENABLE_STORE}" == "true" ]; then
+             echo "正在下载 iStore 离线包..."
+             mkdir -p packages
+             # 下载 ipk 及 对应的索引文件
+             wget -r -np -nd -A "luci-app-store*.ipk,luci-lib-taskd*.ipk,taskd*.ipk,luci-lib-xterm*.ipk,Packages,Packages.gz,Packages.sig" -P packages https://istore.linkease.com/repo/all/store/ || true
+             
+             if [ "$(ls packages/*.ipk 2>/dev/null | wc -l)" -eq 0 ]; then
+                echo "Warning: iStore packages download failed!"
+             else
+                echo "luci-app-store taskd luci-lib-taskd luci-lib-xterm" >> custom_packages.txt
+                # 向 opkg 告知本地目录
+                echo "src custom file://$(pwd)/packages" >> repositories.conf
+             fi
+          fi
+
+          # ImmortalWrt 基础包配置
+          # 包含更多预编译包和优化的内核模块
+          BASE_PACKAGES="luci luci-base luci-ssl uhttpd uhttpd-mod-ubus \
+          luci-i18n-base-zh-cn luci-i18n-firewall-zh-cn \
+          luci-app-ttyd luci-i18n-ttyd-zh-cn \
+          openssh-sftp-server \
+          bash curl wget-ssl tar unzip bind-dig \
+          kmod-usb-storage kmod-usb-storage-uas kmod-fs-ext4 kmod-fs-vfat kmod-fs-exfat \
+          block-mount fdisk e2fsprogs lsblk parted"
+
+          if [[ "$VERSION" == "24.10."* ]] || [[ "$VERSION" == "SNAPSHOT" ]]; then
+              BASE_PACKAGES="$BASE_PACKAGES luci-i18n-package-manager-zh-cn"
+          fi
+          
+          [ -f .config ] || touch .config
+          
+          # 防止没有 config 目录时报错
+          if [ -f ../config/base.config ]; then
+             cat ../config/base.config >> .config
+          else
+             echo "提示：未找到 ../config/base.config，跳过追加。"
+          fi
+          
+          if [[ "${BUILD_TYPE}" == *"iso"* ]]; then
+             echo "Enabling ISO images..."
+             echo "CONFIG_ISO_IMAGES=y" >> .config
+          fi
+          
+          CUSTOM_PACKAGES=$(cat custom_packages.txt | tr '\n' ' ')
+          
+          echo "PACKAGES=$BASE_PACKAGES $CUSTOM_PACKAGES" >> $GITHUB_ENV
+
+      - name: 生成固件
+        working-directory: ./immortalwrt-ib
+        run: |
+          make image PACKAGES="$PACKAGES" FILES="files"
+
+      - name: 整理构建产物
+        env:
+          BUILD_TYPE: ${{ github.event.inputs.build_type }}
+        run: |
+          mkdir -p firmware
+          
+          echo "=== 诊断信息 ==="
+          echo "选择的构建类型：${BUILD_TYPE}"
+          
+          echo "=== Image Builder 输出的构建结果 ==="
+          ls -lh immortalwrt-ib/bin/targets/x86/64/ || true
+          echo "==================================="
+          
+          # 根据构建类型筛选并复制文件
+          if [[ "${BUILD_TYPE}" == *"iso"* ]]; then
+             echo "➡️ ISO 模式已启用，保留 ISO 文件..."
+             find immortalwrt-ib/bin/targets/x86/64 -name "*.iso" -exec cp {} firmware/ \;
+          elif [[ "${BUILD_TYPE}" == *"squashfs_ext4"* ]]; then
+             echo "➡️ 常规模式，保留 .img.* 固件文件..."
+             # 提取 combined 固件，排除 rootfs 单独镜像
+             find immortalwrt-ib/bin/targets/x86/64 -name "*.img.*" ! -name "*rootfs*" -exec cp {} firmware/ \;
+          elif [[ "${BUILD_TYPE}" == *"rootfs"* ]]; then
+             echo "➡️ Rootfs 模式，保留 rootfs 文件..."
+             # 仅保留 rootfs.tar.gz，排除 rootfs.img.gz
+             find immortalwrt-ib/bin/targets/x86/64 -name "*rootfs.tar.gz" -exec cp {} firmware/ \;
+          else
+             echo "⚠️ 未知的构建类型！将复制所有镜像文件..."
+             find immortalwrt-ib/bin/targets/x86/64 -name "*.img.*" -exec cp {} firmware/ \;
+          fi
+          
+          # 顺便提取配置清单和校验文件（刷机很有用）
+          echo "➡️ 提取附加信息文件..."
+          cp immortalwrt-ib/bin/targets/x86/64/sha256sums firmware/ 2>/dev/null || true
+          cp immortalwrt-ib/bin/targets/x86/64/profiles.json firmware/ 2>/dev/null || true
+          
+          cd firmware
+          echo "=== 准备打包的文件 ==="
+          ls -lh
+          
+          # 最终安全拦截
+          if [ -z "$(ls -A .)" ]; then
+              echo "Error: 在 firmware 目录中没有找到任何文件！请检查上面 if 匹配逻辑。"
+              exit 1
+          fi
+          
+          VERSION="${{ github.event.inputs.immortalwrt_version }}"
+          zip -r "ImmortalWrt_x86_64_${VERSION}.zip" ./*
+
+      - name: 上传固件 Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ImmortalWrt_x86_64_Firmware
+          path: firmware/*.zip
+
+      - name: 发布到 GitHub Release
+        uses: softprops/action-gh-release@v1
+        if: github.event.inputs.auto_release == 'true'
+        with:
+          tag_name: immortalwrt-v${{ env.VERSION }}-${{ github.run_id }}
+          name: ImmortalWrt ${{ env.VERSION }} x86_64
+          body: |
+            ImmortalWrt x86_64 固件
+            版本：${{ env.VERSION }}
+            类型：${{ github.event.inputs.build_type }}
+            管理地址：${{ github.event.inputs.lan_ip }}
+            用户名：root
+            密码：(无)
+            固件大小：${{ env.FIRMWARE_SIZE }}MB
+            
+            ImmortalWrt 是基于 OpenWrt 的第三方固件分支，提供更多预编译包和优化的内核。
+          files: firmware/*
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
