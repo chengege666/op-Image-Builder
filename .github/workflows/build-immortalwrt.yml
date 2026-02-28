@@ -106,17 +106,8 @@ jobs:
           echo "下载地址：$IB_URL"
           
           if ! wget -qO immortalwrt-ib.${FILE_EXT} "$IB_URL"; then
-             echo "Error: 下载失败！请检查版本号 $VERSION 是否存在。"
-             echo "尝试使用 OpenWrt 镜像源作为备选..."
-             if [ "$VERSION" == "SNAPSHOT" ]; then
-                IB_URL="https://downloads.openwrt.org/snapshots/targets/x86/64/openwrt-imagebuilder-x86-64.Linux-x86_64.${FILE_EXT}"
-             else
-                IB_URL="https://downloads.openwrt.org/releases/${VERSION}/targets/x86/64/openwrt-imagebuilder-${VERSION}-x86-64.Linux-x86_64.${FILE_EXT}"
-             fi
-             if ! wget -qO immortalwrt-ib.${FILE_EXT} "$IB_URL"; then
-                echo "Error: 备选下载也失败！退出。"
-                exit 1
-             fi
+             echo "Error: 下载失败！请检查版本号 $VERSION 是否存在，或 ImmortalWrt 源是否可用。"
+             exit 1
           fi
           
           echo "正在解压..."
@@ -271,8 +262,8 @@ jobs:
           path: firmware/*.zip
 
       - name: 发布到 GitHub Release
-        uses: softprops/action-gh-release@v1
-        if: github.event.inputs.auto_release == 'true'
+        uses: softprops/action-gh-release@v2
+        if: ${{ github.event.inputs.auto_release == 'true' }}
         with:
           tag_name: immortalwrt-v${{ env.VERSION }}-${{ github.run_id }}
           name: ImmortalWrt ${{ env.VERSION }} x86_64
@@ -286,6 +277,7 @@ jobs:
             固件大小：${{ env.FIRMWARE_SIZE }}MB
             
             ImmortalWrt 是基于 OpenWrt 的第三方固件分支，提供更多预编译包和优化的内核。
-          files: firmware/*
+          files: |
+            firmware/*.zip
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
