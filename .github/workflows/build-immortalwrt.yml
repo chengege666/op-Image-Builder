@@ -174,7 +174,7 @@ jobs:
 
           # ImmortalWrt 基础包配置
           # 包含更多预编译包和优化的内核模块
-          BASE_PACKAGES="luci luci-base luci-ssl uhttpd uhttpd-mod-ubus \
+          BASE_PACKAGES="luci luci-base luci-ssl-openssl uhttpd uhttpd-mod-ubus \
           luci-i18n-base-zh-cn luci-i18n-firewall-zh-cn \
           luci-app-ttyd luci-i18n-ttyd-zh-cn \
           openssh-sftp-server \
