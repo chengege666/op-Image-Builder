@@ -1,8 +1,16 @@
-name: 构建 OpenWrt 25.12.0 (Image Builder)
+name: 构建 OpenWrt 25.12.x (Image Builder)
 
 on:
   workflow_dispatch:
     inputs:
+      version:
+        description: 'OpenWrt 版本'
+        required: true
+        default: '25.12.0'
+        type: choice
+        options:
+          - '25.12.0'
+          - '25.12.2'
       build_type:
         description: '固件构建类型'
         required: true
@@ -26,9 +34,6 @@ on:
         type: boolean
         default: false
 
-env:
-  VERSION: '25.12.0'
-
 permissions:
   contents: write
   actions: write
@@ -46,6 +51,8 @@ jobs:
           sudo apt-get install -y build-essential libncurses-dev zlib1g-dev gawk git gettext libssl-dev xsltproc rsync wget unzip python3 python3-setuptools python3-pyelftools zstd genisoimage xorriso mtools
 
       - name: 下载 Image Builder
+        env:
+          VERSION: ${{ github.event.inputs.version }}
         run: |
           # 25.12.x 版本及之后通常使用 tar.zst
           # 尝试下载 .zst，如果失败尝试 .xz
@@ -153,23 +160,23 @@ jobs:
       - name: 上传固件 Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: OpenWrt-25.12.0-Firmware
+          name: OpenWrt-${{ github.event.inputs.version }}-Firmware
           path: firmware/*
 
       - name: 发布到 GitHub Release
         uses: softprops/action-gh-release@v1
         if: github.event.inputs.auto_release == 'true'
         with:
-          tag_name: v${{ env.VERSION }}-${{ github.run_id }}
-          name: OpenWrt ${{ env.VERSION }} x86_64
+          tag_name: v${{ github.event.inputs.version }}-${{ github.run_id }}
+          name: OpenWrt ${{ github.event.inputs.version }} x86_64
           body: |
             OpenWrt x86_64 固件
-            版本: ${{ env.VERSION }}
+            版本: ${{ github.event.inputs.version }}
             类型: ${{ github.event.inputs.build_type }}
             管理地址: ${{ github.event.inputs.lan_ip }}
             用户名: root
             密码: (无)
-            固件大小: ${{ env.FIRMWARE_SIZE }}MB
+            固件大小: ${{ github.event.inputs.firmware_size }}MB
           files: firmware/*
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
