@@ -1,4 +1,4 @@
-name: 构建 ImmortalWrt 25.12.0-rc1 (Image Builder)
+name: 构建 ImmortalWrt 25.12.x (Image Builder)
 
 on:
   workflow_dispatch:
