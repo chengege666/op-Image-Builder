@@ -173,6 +173,11 @@ jobs:
              fi
           fi
 
+          # 添加 dae-universe 存储库以安装 daed 和 dae
+          echo "src/gz dae_universe https://dae-universe.github.io/repo/x86_64" >> repositories.conf
+          # 补充 daed 所需的 ca-bundle
+          echo "ca-bundle" >> custom_packages.txt
+
           BASE_PACKAGES="luci luci-base luci-ssl uhttpd uhttpd-mod-ubus \
           luci-i18n-base-zh-cn luci-i18n-firewall-zh-cn \
           luci-app-ttyd luci-i18n-ttyd-zh-cn \
@@ -180,8 +185,8 @@ jobs:
           bash curl wget-ssl tar unzip bind-dig \
           kmod-usb-storage kmod-usb-storage-uas kmod-fs-ext4 kmod-fs-vfat kmod-fs-exfat \
           block-mount fdisk e2fsprogs lsblk parted \
-          daed dae ip-full nftables \
-          kmod-tun kmod-nft-tproxy kmod-nft-socket kmod-nft-nat kmod-nft-chain-nat-ipv4 kmod-nft-chain-nat-ipv6"
+          daed dae -ip-tiny ip-full nftables \
+          kmod-tun kmod-bpf kmod-nft-tproxy kmod-nft-socket kmod-nft-nat kmod-nft-chain-nat-ipv4 kmod-nft-chain-nat-ipv6"
 
           if [[ "$VERSION" == "24.10."* ]] || [[ "$VERSION" == "SNAPSHOT" ]]; then
               BASE_PACKAGES="$BASE_PACKAGES luci-i18n-package-manager-zh-cn"
