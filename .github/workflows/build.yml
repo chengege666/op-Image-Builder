@@ -67,6 +67,12 @@ on:
       pppoe_pass:
         description: 'PPPoE 密码'
         required: false
+      # ========== 新增：是否集成 dae ==========
+      enable_daed:
+        description: '启用 Dae (代理工具，含内核模块)'
+        required: false
+        type: boolean
+        default: false
 
 permissions:
   contents: write
@@ -133,6 +139,7 @@ jobs:
           ENABLE_PPPOE: ${{ github.event.inputs.enable_pppoe }}
           PPPOE_USER: ${{ github.event.inputs.pppoe_user }}
           PPPOE_PASS: ${{ github.event.inputs.pppoe_pass }}
+          ENABLE_DAED: ${{ github.event.inputs.enable_daed }}      # 新增
         run: |
           if [ "${FIRMWARE_SIZE}" == "custom" ]; then
              echo "Using custom firmware size: ${CUSTOM_FIRMWARE_SIZE}"
@@ -173,6 +180,13 @@ jobs:
              fi
           fi
 
+          # ========== 新增：集成 dae 及相关内核模块 ==========
+          if [ "${ENABLE_DAED}" == "true" ]; then
+             echo "启用 Dae 代理及所需内核模块..."
+             # 添加 dae 主程序、luci 界面以及必要的内核模块
+             echo "dae luci-app-dae kmod-tun kmod-nft-tproxy kmod-nft-socket kmod-nft-fib kmod-ipt-tproxy" >> custom_packages.txt
+          fi
+
           BASE_PACKAGES="luci luci-base luci-ssl uhttpd uhttpd-mod-ubus \
           luci-i18n-base-zh-cn luci-i18n-firewall-zh-cn \
           luci-app-ttyd luci-i18n-ttyd-zh-cn \
@@ -210,7 +224,6 @@ jobs:
 
       - name: 整理构建产物
         env:
-          # 【核心修复】：注入判断必须的环境变量
           BUILD_TYPE: ${{ github.event.inputs.build_type }}
         run: |
           mkdir -p firmware
