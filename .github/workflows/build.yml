@@ -67,12 +67,6 @@ on:
       pppoe_pass:
         description: 'PPPoE 密码'
         required: false
-      # ----- 新增 dae 开关 -----
-      enable_daed:
-        description: '启用 Dae (代理工具，含内核模块)'
-        required: false
-        type: boolean
-        default: false
 
 permissions:
   contents: write
@@ -139,7 +133,6 @@ jobs:
           ENABLE_PPPOE: ${{ github.event.inputs.enable_pppoe }}
           PPPOE_USER: ${{ github.event.inputs.pppoe_user }}
           PPPOE_PASS: ${{ github.event.inputs.pppoe_pass }}
-          ENABLE_DAED: ${{ github.event.inputs.enable_daed }}
         run: |
           if [ "${FIRMWARE_SIZE}" == "custom" ]; then
              echo "Using custom firmware size: ${CUSTOM_FIRMWARE_SIZE}"
@@ -164,33 +157,22 @@ jobs:
              [ -f ../scripts/set_pppoe.sh ] && ../scripts/set_pppoe.sh
           fi
           
-          # ---------- iStore 部分 (原逻辑不变) ----------
+          # 处理 iStore 的本地源，拉取 Packages.gz 索引并写入 repositories.conf
           if [ "${ENABLE_STORE}" == "true" ]; then
              echo "正在下载 iStore 离线包..."
              mkdir -p packages
+             # 下载 ipk 及 对应的索引文件
              wget -r -np -nd -A "luci-app-store*.ipk,luci-lib-taskd*.ipk,taskd*.ipk,luci-lib-xterm*.ipk,Packages,Packages.gz,Packages.sig" -P packages https://istore.linkease.com/repo/all/store/ || true
              
              if [ "$(ls packages/*.ipk 2>/dev/null | wc -l)" -eq 0 ]; then
                 echo "Warning: iStore packages download failed!"
              else
                 echo "luci-app-store taskd luci-lib-taskd luci-lib-xterm" >> custom_packages.txt
+                # 向 opkg 告知本地目录
                 echo "src custom file://$(pwd)/packages" >> repositories.conf
              fi
           fi
 
-          # ---------- 新增 dae 集成 (使用官方 feed，不手动加内核模块) ----------
-          if [ "${ENABLE_DAED}" == "true" ]; then
-             echo "添加 dae 官方 feed ..."
-             # 添加 feed 源 (适用于 23.05+ / 24.10+)
-             echo "src-git dae https://github.com/daeuniverse/openwrt-dae.git" >> feeds.conf
-             # 更新并安装 feed 中的包
-             ./scripts/feeds update dae
-             ./scripts/feeds install -a -p dae
-             # 将 dae 相关包加入自定义列表
-             echo "dae luci-app-dae" >> custom_packages.txt
-          fi
-
-          # ---------- 基础包列表 (原逻辑不变) ----------
           BASE_PACKAGES="luci luci-base luci-ssl uhttpd uhttpd-mod-ubus \
           luci-i18n-base-zh-cn luci-i18n-firewall-zh-cn \
           luci-app-ttyd luci-i18n-ttyd-zh-cn \
@@ -205,6 +187,7 @@ jobs:
           
           [ -f .config ] || touch .config
           
+          # 防止没有 config 目录时报错
           if [ -f ../config/base.config ]; then
              cat ../config/base.config >> .config
           else
@@ -217,6 +200,7 @@ jobs:
           fi
           
           CUSTOM_PACKAGES=$(cat custom_packages.txt | tr '\n' ' ')
+          
           echo "PACKAGES=$BASE_PACKAGES $CUSTOM_PACKAGES" >> $GITHUB_ENV
 
       - name: 生成固件
@@ -226,6 +210,7 @@ jobs:
 
       - name: 整理构建产物
         env:
+          # 【核心修复】：注入判断必须的环境变量
           BUILD_TYPE: ${{ github.event.inputs.build_type }}
         run: |
           mkdir -p firmware
@@ -237,20 +222,25 @@ jobs:
           ls -lh openwrt-ib/bin/targets/x86/64/ || true
           echo "==================================="
           
+          # 根据构建类型筛选并复制文件
           if [[ "${BUILD_TYPE}" == *"iso"* ]]; then
              echo "➡️ ISO 模式已启用，保留 ISO 文件..."
              find openwrt-ib/bin/targets/x86/64 -name "*.iso" -exec cp {} firmware/ \;
           elif [[ "${BUILD_TYPE}" == *"squashfs_ext4"* ]]; then
              echo "➡️ 常规模式，保留 .img.* 固件文件..."
+             # 提取 combined 固件，排除 rootfs 单独镜像
              find openwrt-ib/bin/targets/x86/64 -name "*.img.*" ! -name "*rootfs*" -exec cp {} firmware/ \;
           elif [[ "${BUILD_TYPE}" == *"rootfs"* ]]; then
              echo "➡️ Rootfs 模式，保留 rootfs 文件..."
+             # 仅保留 rootfs.tar.gz，排除 rootfs.img.gz
              find openwrt-ib/bin/targets/x86/64 -name "*rootfs.tar.gz" -exec cp {} firmware/ \;
           else
              echo "⚠️ 未知的构建类型！将复制所有镜像文件..."
              find openwrt-ib/bin/targets/x86/64 -name "*.img.*" -exec cp {} firmware/ \;
           fi
           
+          # 顺便提取配置清单和校验文件（刷机很有用）
+          echo "➡️ 提取附加信息文件..."
           cp openwrt-ib/bin/targets/x86/64/sha256sums firmware/ 2>/dev/null || true
           cp openwrt-ib/bin/targets/x86/64/profiles.json firmware/ 2>/dev/null || true
           
@@ -258,6 +248,7 @@ jobs:
           echo "=== 准备打包的文件 ==="
           ls -lh
           
+          # 最终安全拦截
           if [ -z "$(ls -A .)" ]; then
               echo "Error: 在 firmware 目录中没有找到任何文件！请检查上面 if 匹配逻辑。"
               exit 1
