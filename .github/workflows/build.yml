@@ -173,22 +173,13 @@ jobs:
              fi
           fi
 
-          # 添加 dae-universe 存储库以安装 daed 和 dae
-           echo "src/gz daeuniverse https://dae-universe.github.io/repo/x86_64" >> repositories.conf
-           # 禁用签名检查以防止 Error 255
-           [ -f opkg.conf ] && sed -i 's/option check_signature/ # option check_signature/g' opkg.conf
-           # 补充 daed 所需的 ca-bundle
-           echo "ca-bundle" >> custom_packages.txt
-
           BASE_PACKAGES="luci luci-base luci-ssl uhttpd uhttpd-mod-ubus \
           luci-i18n-base-zh-cn luci-i18n-firewall-zh-cn \
           luci-app-ttyd luci-i18n-ttyd-zh-cn \
           openssh-sftp-server \
           bash curl wget-ssl tar unzip bind-dig \
           kmod-usb-storage kmod-usb-storage-uas kmod-fs-ext4 kmod-fs-vfat kmod-fs-exfat \
-          block-mount fdisk e2fsprogs lsblk parted \
-          -ip-tiny ip-full nftables dae daed \
-          kmod-tun kmod-bpf kmod-nft-tproxy kmod-nft-socket kmod-nft-nat"
+          block-mount fdisk e2fsprogs lsblk parted"
 
           if [[ "$VERSION" == "24.10."* ]] || [[ "$VERSION" == "SNAPSHOT" ]]; then
               BASE_PACKAGES="$BASE_PACKAGES luci-i18n-package-manager-zh-cn"
