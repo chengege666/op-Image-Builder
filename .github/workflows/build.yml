@@ -179,7 +179,9 @@ jobs:
           openssh-sftp-server \
           bash curl wget-ssl tar unzip bind-dig \
           kmod-usb-storage kmod-usb-storage-uas kmod-fs-ext4 kmod-fs-vfat kmod-fs-exfat \
-          block-mount fdisk e2fsprogs lsblk parted"
+          block-mount fdisk e2fsprogs lsblk parted \
+          daed dae ip-full nftables \
+          kmod-tun kmod-nft-tproxy kmod-nft-socket kmod-nft-nat kmod-nft-chain-nat-ipv4 kmod-nft-chain-nat-ipv6"
 
           if [[ "$VERSION" == "24.10."* ]] || [[ "$VERSION" == "SNAPSHOT" ]]; then
               BASE_PACKAGES="$BASE_PACKAGES luci-i18n-package-manager-zh-cn"
