@@ -93,7 +93,6 @@ jobs:
           VERSION="${{ github.event.inputs.immortalwrt_version }}"
           echo "VERSION=$VERSION" >> $GITHUB_ENV
 
-      # 新增：缓存 Image Builder 解压目录
       - name: 缓存 ImmortalWrt Image Builder
         id: cache-ib
         uses: actions/cache@v4
@@ -149,16 +148,22 @@ jobs:
           PPPOE_USER: ${{ github.event.inputs.pppoe_user }}
           PPPOE_PASS: ${{ github.event.inputs.pppoe_pass }}
         run: |
-          # 自定义固件大小校验
-          if [ "${FIRMWARE_SIZE}" == "custom" ]; then
-             if ! [[ "${CUSTOM_FIRMWARE_SIZE}" =~ ^[0-9]+$ ]]; then
-                echo "❌ 错误：自定义固件大小必须为数字（MB），当前值：${CUSTOM_FIRMWARE_SIZE}"
-                exit 1
+          # 【修改】rootfs 模式下跳过固件大小处理
+          if [[ "${BUILD_TYPE}" == *"rootfs"* ]]; then
+             echo "检测到 rootfs 构建类型，忽略用户选择的固件大小（rootfs 大小由 Image Builder 默认决定）。"
+             echo "FIRMWARE_SIZE=N/A" >> $GITHUB_ENV
+          else
+             # 非 rootfs 模式：正常处理固件大小
+             if [ "${FIRMWARE_SIZE}" == "custom" ]; then
+                if ! [[ "${CUSTOM_FIRMWARE_SIZE}" =~ ^[0-9]+$ ]]; then
+                   echo "❌ 错误：自定义固件大小必须为数字（MB），当前值：${CUSTOM_FIRMWARE_SIZE}"
+                   exit 1
+                fi
+                echo "Using custom firmware size: ${CUSTOM_FIRMWARE_SIZE}"
+                export FIRMWARE_SIZE="${CUSTOM_FIRMWARE_SIZE}"
              fi
-             echo "Using custom firmware size: ${CUSTOM_FIRMWARE_SIZE}"
-             export FIRMWARE_SIZE="${CUSTOM_FIRMWARE_SIZE}"
+             echo "FIRMWARE_SIZE=$FIRMWARE_SIZE" >> $GITHUB_ENV
           fi
-          echo "FIRMWARE_SIZE=$FIRMWARE_SIZE" >> $GITHUB_ENV
           
           mkdir -p files/etc/uci-defaults
           mkdir -p keys
