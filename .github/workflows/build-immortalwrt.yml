@@ -275,7 +275,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: ImmortalWrt_x86_64_Firmware
-          path: firmware/*.zip
+          path: firmware/*
 
       - name: 发布到 GitHub Release
         uses: softprops/action-gh-release@v2
@@ -294,6 +294,6 @@ jobs:
             
             ImmortalWrt 是基于 OpenWrt 的第三方固件分支，提供更多预编译包和优化的内核。
           files: |
-            firmware/*.zip
+            firmware/*
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
