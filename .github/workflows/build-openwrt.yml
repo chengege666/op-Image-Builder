@@ -70,7 +70,7 @@ on:
 
 permissions:
   contents: write
-  actions: write
+  # 移除了 actions: write，降低权限
 
 jobs:
   build:
@@ -79,10 +79,13 @@ jobs:
       - name: 检出代码
         uses: actions/checkout@v4
 
-      - name: 初始化构建环境
+      - name: 初始化构建环境（优化依赖安装）
         run: |
           sudo apt-get update
-          sudo apt-get install -y build-essential libncurses-dev zlib1g-dev gawk git gettext libssl-dev xsltproc rsync wget unzip python3 python3-setuptools python3-pyelftools zstd genisoimage xorriso mtools
+          sudo apt-get install --no-install-recommends -y \
+            build-essential libncurses-dev zlib1g-dev gawk git gettext \
+            libssl-dev xsltproc rsync wget unzip python3 python3-setuptools \
+            python3-pyelftools zstd genisoimage xorriso mtools
 
       - name: 获取 OpenWrt 版本
         id: get_version
@@ -90,7 +93,18 @@ jobs:
           VERSION="${{ github.event.inputs.luci_version }}"
           echo "VERSION=$VERSION" >> $GITHUB_ENV
 
-      - name: 下载 Image Builder
+      # 新增：缓存 Image Builder 解压目录
+      - name: 缓存 OpenWrt Image Builder
+        id: cache-ib
+        uses: actions/cache@v4
+        with:
+          path: openwrt-ib
+          key: openwrt-ib-${{ env.VERSION }}-${{ runner.os }}
+          restore-keys: |
+            openwrt-ib-${{ env.VERSION }}-
+
+      - name: 下载并解压 Image Builder（缓存未命中时）
+        if: steps.cache-ib.outputs.cache-hit != 'true'
         run: |
           if [ "$VERSION" == "SNAPSHOT" ]; then
              FILE_EXT="tar.zst"
@@ -134,7 +148,12 @@ jobs:
           PPPOE_USER: ${{ github.event.inputs.pppoe_user }}
           PPPOE_PASS: ${{ github.event.inputs.pppoe_pass }}
         run: |
+          # 自定义固件大小数值校验
           if [ "${FIRMWARE_SIZE}" == "custom" ]; then
+             if ! [[ "${CUSTOM_FIRMWARE_SIZE}" =~ ^[0-9]+$ ]]; then
+                echo "❌ 错误：自定义固件大小必须为数字（MB），当前值：${CUSTOM_FIRMWARE_SIZE}"
+                exit 1
+             fi
              echo "Using custom firmware size: ${CUSTOM_FIRMWARE_SIZE}"
              export FIRMWARE_SIZE="${CUSTOM_FIRMWARE_SIZE}"
           fi
@@ -144,7 +163,7 @@ jobs:
           mkdir -p keys
           touch custom_packages.txt
 
-          # 确保脚本存在并赋予执行权限
+          # 脚本存在性检查（优化：缺失时输出警告）
           if ls ../scripts/*.sh 1> /dev/null 2>&1; then
              chmod +x ../scripts/*.sh
              [ -f ../scripts/set_ip.sh ] && ../scripts/set_ip.sh
@@ -155,18 +174,24 @@ jobs:
 
              [ -f ../scripts/add_docker.sh ] && ../scripts/add_docker.sh
              [ -f ../scripts/set_pppoe.sh ] && ../scripts/set_pppoe.sh
+          else
+             echo "⚠️ 警告：未找到 ../scripts/ 目录或任何 .sh 脚本，跳过自定义配置（IP/Docker/PPPoE 等）"
           fi
           
-          # 处理 iStore 的本地源，拉取 Packages.gz 索引并写入 repositories.conf
+          # 处理 iStore 的本地源（优化：下载失败时终止构建）
           if [ "${ENABLE_STORE}" == "true" ]; then
              echo "正在下载 iStore 离线包..."
              mkdir -p packages
-             # 下载 ipk 及 对应的索引文件
+             # 下载 ipk 及对应的索引文件
              wget -r -np -nd -A "luci-app-store*.ipk,luci-lib-taskd*.ipk,taskd*.ipk,luci-lib-xterm*.ipk,Packages,Packages.gz,Packages.sig" -P packages https://istore.linkease.com/repo/all/store/ || true
              
-             if [ "$(ls packages/*.ipk 2>/dev/null | wc -l)" -eq 0 ]; then
-                echo "Warning: iStore packages download failed!"
+             IPK_COUNT=$(ls packages/*.ipk 2>/dev/null | wc -l)
+             if [ "$IPK_COUNT" -eq 0 ]; then
+                echo "❌ 错误：启用 iStore 但下载离线包失败，无法继续构建。"
+                echo "请检查网络或 istore.linkease.com 是否可访问。"
+                exit 1
              else
+                echo "✅ 成功下载 $IPK_COUNT 个 iStore 相关 ipk 包"
                 echo "luci-app-store taskd luci-lib-taskd luci-lib-xterm" >> custom_packages.txt
                 # 向 opkg 告知本地目录
                 echo "src custom file://$(pwd)/packages" >> repositories.conf
@@ -203,14 +228,34 @@ jobs:
           
           echo "PACKAGES=$BASE_PACKAGES $CUSTOM_PACKAGES" >> $GITHUB_ENV
 
-      - name: 生成固件
+      - name: 生成固件（详细日志）
         working-directory: ./openwrt-ib
         run: |
-          make image PACKAGES="$PACKAGES" FILES="files"
+          echo "=== 开始构建固件 ==="
+          echo "PACKAGES: $PACKAGES"
+          echo ""
+          echo "=== .config 内容 ==="
+          cat .config || true
+          echo ""
+          echo "=== 开始执行 make image ==="
+          make image PACKAGES="$PACKAGES" FILES="files" V=s 2>&1 | tee /tmp/build.log
+          BUILD_STATUS=${PIPESTATUS[0]}
+          if [ $BUILD_STATUS -ne 0 ]; then
+            echo "=== 构建失败，显示最后 100 行日志 ==="
+            tail -n 100 /tmp/build.log
+            exit $BUILD_STATUS
+          fi
+
+      - name: 上传构建日志（便于调试）
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-log
+          path: /tmp/build.log
+          retention-days: 7
 
       - name: 整理构建产物
         env:
-          # 【核心修复】：注入判断必须的环境变量
           BUILD_TYPE: ${{ github.event.inputs.build_type }}
         run: |
           mkdir -p firmware
@@ -261,10 +306,11 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: OpenWrt_x86_64_Firmware
-          path: firmware/*.zip
+          # 上传整个 firmware 目录，包含独立镜像和 ZIP 包
+          path: firmware/
 
       - name: 发布到 GitHub Release
-        uses: softprops/action-gh-release@v1
+        uses: softprops/action-gh-release@v2  # 升级到 v2
         if: github.event.inputs.auto_release == 'true'
         with:
           tag_name: v${{ env.VERSION }}-${{ github.run_id }}
@@ -277,6 +323,7 @@ jobs:
             用户名: root
             密码: (无)
             固件大小: ${{ env.FIRMWARE_SIZE }}MB
+          # 上传整个 firmware 目录下的所有文件
           files: firmware/*
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
