@@ -307,6 +307,19 @@ jobs:
              THIRD_PARTY_COUNT=$(ls packages/*.ipk 2>/dev/null | wc -l)
              echo "✅ 找到 $THIRD_PARTY_COUNT 个第三方 ipk 包"
              
+             # 为第三方包生成 Packages 索引（opkg 需要）
+             echo "🔧 生成 Packages 索引..."
+             (cd packages && ../scripts/gen_packages.sh . > Packages 2>/dev/null || {
+               # 如果 gen_packages.sh 不存在，手动生成简易索引
+               for ipk in *.ipk; do
+                 pkg_name=$(echo "$ipk" | sed 's/_.*//')
+                 echo "Package: $pkg_name"
+                 echo "Filename: $ipk"
+                 echo ""
+               done > Packages
+             })
+             gzip -c packages/Packages > packages/Packages.gz 2>/dev/null || true
+             
              # 添加第三方软件源
              echo "src custom file://$(pwd)/packages" >> repositories.conf
              
