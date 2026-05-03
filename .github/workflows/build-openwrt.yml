@@ -187,8 +187,8 @@ jobs:
                       }
                    ')
                    
-                   # 查找匹配的 asset
-                   MATCHED_URL=$(echo "$RELEASE_ASSETS" | grep "luci-theme-argon-" | head -1)
+                   # 查找匹配的 asset（只匹配 .ipk 文件）
+                   MATCHED_URL=$(echo "$RELEASE_ASSETS" | grep "luci-theme-argon-.*\.ipk" | head -1)
                    
                    if [ -n "$MATCHED_URL" ]; then
                       DOWNLOAD_URL="$MATCHED_URL"
