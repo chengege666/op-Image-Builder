@@ -133,6 +133,133 @@ jobs:
             tar -xf openwrt-ib.${FILE_EXT} -C openwrt-ib --strip-components=1
           fi
 
+      - name: 下载第三方 ipk 包
+        run: |
+          echo "========================================="
+          echo "🚀 开始下载第三方 ipk 包"
+          echo "========================================="
+          
+          if [ ! -f config/third_party_ipk.conf ]; then
+             echo "⚠️ 警告: 未找到 config/third_party_ipk.conf，跳过第三方 ipk 下载"
+             echo "THIRD_PARTY_PACKAGES=" >> $GITHUB_ENV
+             exit 0
+          fi
+          
+          # 创建下载目录
+          mkdir -p third_party_packages
+          
+          # 读取配置文件并下载
+          SUCCESS_COUNT=0
+          FAIL_COUNT=0
+          THIRD_PARTY_PACKAGES=""
+          
+          while IFS= read -r line; do
+             # 跳过注释和空行
+             [[ "$line" =~ ^#.*$ ]] && continue
+             [[ -z "$line" ]] && continue
+             
+             # 解析配置行
+             IFS='|' read -r repo pattern package_name need_lang <<< "$line"
+             repo=$(echo "$repo" | xargs)
+             pattern=$(echo "$pattern" | xargs)
+             package_name=$(echo "$package_name" | xargs)
+             need_lang=$(echo "$need_lang" | xargs)
+             
+             echo ""
+             echo "📌 处理: $package_name"
+             
+             # 从 GitHub API 获取最新 release
+             RELEASE_JSON=$(curl -sL --retry 3 --retry-delay 5 \
+                -H "Accept: application/vnd.github+json" \
+                "https://api.github.com/repos/$repo/releases/latest" 2>/dev/null || echo "")
+             
+             if [ -z "$RELEASE_JSON" ] || echo "$RELEASE_JSON" | grep -q '"message"'; then
+                echo "  ⚠️ 跳过: 无法获取 $repo 的 release 信息"
+                FAIL_COUNT=$((FAIL_COUNT + 1))
+                continue
+             fi
+             
+             # 获取匹配 pattern 的 asset 下载 URL
+             DOWNLOAD_URL=$(echo "$RELEASE_JSON" | grep -o '"browser_download_url": *"[^"]*"' | \
+                grep "$pattern" | head -1 | cut -d'"' -f4)
+             
+             if [ -z "$DOWNLOAD_URL" ]; then
+                echo "  ⚠️ 跳过: 未找到匹配 '$pattern' 的 asset"
+                FAIL_COUNT=$((FAIL_COUNT + 1))
+                continue
+             fi
+             
+             # 下载文件
+             FILENAME=$(basename "$DOWNLOAD_URL")
+             echo "  ⬇️  下载: $FILENAME"
+             
+             if wget -q -O "third_party_packages/$FILENAME" "$DOWNLOAD_URL"; then
+                echo "  ✅ 下载成功: $FILENAME"
+                THIRD_PARTY_PACKAGES="$THIRD_PARTY_PACKAGES $package_name"
+                SUCCESS_COUNT=$((SUCCESS_COUNT + 1))
+                
+                # 下载语言包
+                if [ "$need_lang" = "true" ]; then
+                   # 生成语言包名称
+                   if echo "$package_name" | grep -q "luci-app-"; then
+                      APP_NAME="${package_name#luci-app-}"
+                      LANG_PATTERN="luci-i18n-${APP_NAME}-zh-cn"
+                   elif echo "$package_name" | grep -q "luci-theme-"; then
+                      THEME_NAME="${package_name#luci-theme-}"
+                      LANG_PATTERN="luci-i18n-theme-${THEME_NAME}-zh-cn"
+                   else
+                      LANG_PATTERN="luci-i18n-${package_name}-zh-cn"
+                   fi
+                   
+                   echo "  🔍 查找语言包: $LANG_PATTERN"
+                   
+                   # 从官方源下载语言包
+                   if [[ "$VERSION" == "SNAPSHOT" ]]; then
+                      BASE_URL="https://downloads.openwrt.org/snapshots/packages/x86_64/luci"
+                   else
+                      BASE_URL="https://downloads.openwrt.org/releases/$VERSION/packages/x86_64/luci"
+                   fi
+                   
+                   if wget -q -O "third_party_packages/Packages.gz" "$BASE_URL/Packages.gz" 2>/dev/null; then
+                      LANG_IPK=$(zgrep -o "Filename:.*${LANG_PATTERN}.*ipk" "third_party_packages/Packages.gz" | head -1 | cut -d' ' -f2)
+                      
+                      if [ -n "$LANG_IPK" ]; then
+                         echo "  ⬇️  下载语言包: $(basename "$LANG_IPK")"
+                         if wget -q -O "third_party_packages/$(basename "$LANG_IPK")" "$BASE_URL/$LANG_IPK"; then
+                            echo "  ✅ 语言包下载成功"
+                            THIRD_PARTY_PACKAGES="$THIRD_PARTY_PACKAGES $LANG_PATTERN"
+                         fi
+                      else
+                         echo "  ⚠️ 未找到语言包: $LANG_PATTERN"
+                      fi
+                      rm -f third_party_packages/Packages.gz
+                   fi
+                fi
+             else
+                echo "  ❌ 下载失败: $FILENAME"
+                rm -f "third_party_packages/$FILENAME"
+                FAIL_COUNT=$((FAIL_COUNT + 1))
+             fi
+             
+          done < config/third_party_ipk.conf
+          
+          echo ""
+          echo "========================================="
+          echo "✅ 第三方 ipk 下载完成"
+          echo "   成功: $SUCCESS_COUNT"
+          echo "   失败: $FAIL_COUNT"
+          echo "   包列表: $THIRD_PARTY_PACKAGES"
+          echo "========================================="
+          
+          # 显示下载的文件
+          if ls third_party_packages/*.ipk 1> /dev/null 2>&1; then
+             echo ""
+             echo "📁 已下载的 ipk 文件:"
+             ls -lh third_party_packages/*.ipk | awk '{print "   " $NF " (" $5 ")"}'
+          fi
+          
+          echo "THIRD_PARTY_PACKAGES=$THIRD_PARTY_PACKAGES" >> $GITHUB_ENV
+
       - name: 配置构建参数
         working-directory: ./openwrt-ib
         env:
@@ -166,6 +293,27 @@ jobs:
           mkdir -p files/etc/uci-defaults
           mkdir -p keys
           touch custom_packages.txt
+
+          # 集成第三方 ipk 包
+          if [ -d ../third_party_packages ] && ls ../third_party_packages/*.ipk 1> /dev/null 2>&1; then
+             echo "📦 集成第三方 ipk 包..."
+             mkdir -p packages
+             cp ../third_party_packages/*.ipk packages/
+             
+             THIRD_PARTY_COUNT=$(ls packages/*.ipk 2>/dev/null | wc -l)
+             echo "✅ 找到 $THIRD_PARTY_COUNT 个第三方 ipk 包"
+             
+             # 添加第三方软件源
+             echo "src custom file://$(pwd)/packages" >> repositories.conf
+             
+             # 添加第三方包到自定义列表
+             if [ -n "${{ env.THIRD_PARTY_PACKAGES }}" ]; then
+                echo "${{ env.THIRD_PARTY_PACKAGES }}" >> custom_packages.txt
+                echo "✅ 已添加第三方包: ${{ env.THIRD_PARTY_PACKAGES }}"
+             fi
+          else
+             echo "⚠️ 未找到第三方 ipk 包，跳过集成"
+          fi
 
           if ls ../scripts/*.sh 1> /dev/null 2>&1; then
              chmod +x ../scripts/*.sh
