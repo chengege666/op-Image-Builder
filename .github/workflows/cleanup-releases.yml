@@ -38,80 +38,81 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: 获取所有 Releases
-        id: get-releases
+      - name: 获取所有 Releases 并清理
+        id: cleanup
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           # 获取所有 releases，按创建时间排序
           releases=$(gh api repos/${{ github.repository }}/releases --paginate | jq -r '.[] | "\(.id)|\(.tag_name)|\(.created_at)"' | sort -t'|' -k3 -r)
           
-          total=$(echo "$releases" | wc -l)
+          total=$(echo "$releases" | grep -c . || echo "0")
           keep=${{ github.event.inputs.keep_latest }}
           delete_count=$((total - keep))
           
-          if [ "$delete_count" -le 0 ]; then
-            echo "✅ 当前 Release 数量 ($total) 未超过保留数量 ($keep)，无需删除"
-            echo "delete_list=" >> $GITHUB_OUTPUT
-            exit 0
-          fi
-          
-          # 获取需要删除的 release IDs
-          delete_list=$(echo "$releases" | tail -n $delete_count | cut -d'|' -f1 | tr '\n' ',' | sed 's/,$//')
-          echo "delete_list=$delete_list" >> $GITHUB_OUTPUT
-          
           echo "📊 当前 Release 总数: $total"
           echo "📦 保留数量: $keep"
-          echo "🗑️ 将删除数量: $delete_count"
-
-      - name: 预览将要删除的 Releases
-        if: github.event.inputs.dry_run == 'true'
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          if [ -z "${{ steps.get-releases.outputs.delete_list }}" ]; then
-            echo "✅ 没有需要删除的 Release"
-            exit 0
+          
+          if [ "$delete_count" -le 0 ]; then
+            echo "✅ 当前 Release 数量未超过保留数量，无需删除 Release"
+            delete_count=0
+          else
+            echo "🗑️ 将删除 Release 数量: $delete_count"
           fi
           
-          echo "🔍 预览模式 - 以下 Release 将被删除："
-          IFS=',' read -ra IDS <<< "${{ steps.get-releases.outputs.delete_list }}"
-          for id in "${IDS[@]}"; do
-            gh api repos/${{ github.repository }}/releases/$id | jq -r '"🗑️ [\(.tag_name)] - 创建于: \(.created_at)"'
-          done
-
-      - name: 删除旧的 Releases
-        if: github.event.inputs.dry_run == 'false' && steps.get-releases.outputs.delete_list != ''
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          IFS=',' read -ra IDS <<< "${{ steps.get-releases.outputs.delete_list }}"
-          
-          for id in "${IDS[@]}"; do
-            release_info=$(gh api repos/${{ github.repository }}/releases/$id | jq -r '.tag_name')
-            echo "🗑️ 正在删除 Release: $release_info"
-            gh api -X DELETE repos/${{ github.repository }}/releases/$id
-          done
-          
-          echo "✅ Release 清理完成"
-
-      - name: 删除关联的 Git 标签
-        if: github.event.inputs.dry_run == 'false' && github.event.inputs.delete_tags == 'true' && steps.get-releases.outputs.delete_list != ''
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          IFS=',' read -ra IDS <<< "${{ steps.get-releases.outputs.delete_list }}"
-          
-          for id in "${IDS[@]}"; do
-            # 先获取标签名（在删除 release 之前）
-            tag_name=$(gh api repos/${{ github.repository }}/releases/$id --jq '.tag_name' 2>/dev/null)
-            if [ -n "$tag_name" ]; then
-              echo "🏷️ 正在删除标签: $tag_name"
-              # 使用 gh api 删除标签
-              gh api -X DELETE repos/${{ github.repository }}/git/refs/tags/$tag_name 2>/dev/null && \
-                echo "✅ 标签 $tag_name 删除成功" || \
-                echo "⚠️ 标签 $tag_name 删除失败（可能已被删除）"
+          # 获取需要删除的 release 信息
+          if [ "$delete_count" -gt 0 ]; then
+            delete_info=$(echo "$releases" | tail -n $delete_count)
+            echo "$delete_info" > /tmp/delete_info.txt
+            
+            if [ "${{ github.event.inputs.dry_run }}" == "true" ]; then
+              echo "🔍 预览模式 - 以下 Release 将被删除："
+              while IFS='|' read -r id tag created; do
+                echo "  🗑️ [$tag] - 创建于: $created"
+              done < /tmp/delete_info.txt
+            else
+              # 实际删除 Release
+              while IFS='|' read -r id tag created; do
+                echo "🗑️ 正在删除 Release: $tag"
+                gh api -X DELETE repos/${{ github.repository }}/releases/$id
+                echo "✅ Release $tag 删除成功"
+              done < /tmp/delete_info.txt
+              echo "✅ Release 清理完成"
             fi
-          done
+          fi
           
-          echo "✅ 标签清理完成"
+          # 处理标签清理
+          if [ "${{ github.event.inputs.delete_tags }}" == "true" ]; then
+            echo "️ 开始清理 Git 标签..."
+            
+            # 获取所有标签
+            all_tags=$(git tag | sort -V)
+            tag_count=$(echo "$all_tags" | grep -c . || echo "0")
+            keep_tags=${{ github.event.inputs.keep_latest }}
+            delete_tag_count=$((tag_count - keep_tags))
+            
+            if [ "$delete_tag_count" -le 0 ]; then
+              echo "✅ 当前标签数量 ($tag_count) 未超过保留数量 ($keep_tags)，无需删除标签"
+            else
+              echo "📊 当前标签总数: $tag_count"
+              echo "🗑️ 将删除标签数量: $delete_tag_count"
+              
+              # 获取需要删除的标签
+              delete_tags=$(echo "$all_tags" | tail -n $delete_tag_count)
+              
+              if [ "${{ github.event.inputs.dry_run }}" == "true" ]; then
+                echo "🔍 预览模式 - 以下标签将被删除："
+                echo "$delete_tags" | while read -r tag; do
+                  echo "  🏷️ $tag"
+                done
+              else
+                echo "$delete_tags" | while read -r tag; do
+                  echo "🗑️ 正在删除标签: $tag"
+                  git push --delete origin "$tag" 2>/dev/null && \
+                    echo "✅ 标签 $tag 删除成功" || \
+                    echo "⚠️ 标签 $tag 删除失败"
+                done
+                echo "✅ 标签清理完成"
+              fi
+            fi
+          fi
