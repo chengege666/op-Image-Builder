@@ -149,120 +149,95 @@ jobs:
           
           mkdir -p third_party_packages
           
-          SUCCESS_COUNT=0
-          FAIL_COUNT=0
-          THIRD_PARTY_PACKAGES=""
+          PACKAGE_NAMES=""
           
-          # Argon 主题
           if [ "${ENABLE_ARGON_THEME}" = "true" ]; then
              echo ""
-             echo "📌 下载: luci-theme-argon"
+             echo "➡️ 处理: luci-theme-argon"
+             REPO="jerrykuku/luci-theme-argon"
              
-             # 获取所有 releases 列表（最多 10 个）
-             RELEASES_JSON=$(curl -sL --retry 3 --retry-delay 5 \
-                -H "Accept: application/vnd.github+json" \
-                "https://api.github.com/repos/jerrykuku/luci-theme-argon/releases?per_page=10" 2>/dev/null || echo "")
+             echo "   正在查找包含 ipk 文件的 Release..."
+             FOUND_IPK=false
              
-             if [ -n "$RELEASES_JSON" ] && ! echo "$RELEASES_JSON" | grep -q '"message"'; then
-                DOWNLOAD_URL=""
-                FOUND_TAG=""
+             for page in 1 2 3; do
+                API_URL="https://api.github.com/repos/${REPO}/releases?per_page=10&page=${page}"
                 
-                # 遍历 releases 查找匹配的 asset
-                RELEASE_COUNT=$(echo "$RELEASES_JSON" | grep -c '"tag_name"' || echo "0")
-                echo "  🔍 检查最近 $RELEASE_COUNT 个 releases..."
+                if ! wget -qO /tmp/api_argon_page${page}.json "$API_URL"; then
+                   echo "   ⚠️ 警告：无法获取 Release 列表 (page $page),跳过"
+                   continue
+                fi
                 
-                for i in $(seq 0 $((RELEASE_COUNT - 1))); do
-                   TAG_NAME=$(echo "$RELEASES_JSON" | grep -o '"tag_name": *"[^"]*"' | sed -n $((i+1))p | cut -d'"' -f4)
-                   
-                   # 提取该 release 的所有 asset URLs
-                   RELEASE_ASSETS=$(echo "$RELEASES_JSON" | awk -v idx=$((i+1)) '
-                      BEGIN { count=0 }
-                      /"tag_name"/ { count++ }
-                      count == idx { 
-                         if (/"browser_download_url"/) {
-                            gsub(/.*"browser_download_url": *"/, "")
-                            gsub(/".*/, "")
-                            print
-                         }
-                      }
-                   ')
-                   
-                   # 查找匹配的 asset（只匹配 .ipk 文件）
-                   MATCHED_URL=$(echo "$RELEASE_ASSETS" | grep "luci-theme-argon-.*\.ipk" | head -1)
-                   
-                   if [ -n "$MATCHED_URL" ]; then
-                      DOWNLOAD_URL="$MATCHED_URL"
-                      FOUND_TAG="$TAG_NAME"
-                      echo "  ✅ 在 release $TAG_NAME 中找到匹配的 asset"
-                      break
-                   else
-                      echo "  ⏭️  release $TAG_NAME 中未找到"
-                   fi
-                done
+                RELEASE_COUNT=$(grep -c '"tag_name"' /tmp/api_argon_page${page}.json || echo "0")
+                if [ "$RELEASE_COUNT" -eq 0 ]; then
+                   echo "   已检查完所有 Release"
+                   break
+                fi
                 
-                if [ -n "$DOWNLOAD_URL" ]; then
-                   FILENAME=$(basename "$DOWNLOAD_URL")
-                   echo "  ⬇️  下载: $FILENAME"
+                DOWNLOAD_URLS=$(grep -o '"browser_download_url": *"[^"]*\.ipk"' /tmp/api_argon_page${page}.json | cut -d'"' -f4)
+                
+                if [ -n "$DOWNLOAD_URLS" ]; then
+                   echo "   ✅ 在 Release 中找到 ipk 文件"
+                   FOUND_IPK=true
                    
-                   if wget -q -O "third_party_packages/$FILENAME" "$DOWNLOAD_URL"; then
-                      echo "  ✅ 下载成功: $FILENAME"
-                      THIRD_PARTY_PACKAGES="$THIRD_PARTY_PACKAGES luci-theme-argon"
-                      SUCCESS_COUNT=$((SUCCESS_COUNT + 1))
-                      
-                      # 下载语言包
-                      LANG_PATTERN="luci-i18n-theme-argon-zh-cn"
-                      echo "  🔍 查找语言包: $LANG_PATTERN"
-                      
-                      if [[ "$VERSION" == "SNAPSHOT" ]]; then
-                         BASE_URL="https://downloads.openwrt.org/snapshots/packages/x86_64/luci"
-                      else
-                         BASE_URL="https://downloads.openwrt.org/releases/$VERSION/packages/x86_64/luci"
-                      fi
-                      
-                      if wget -q -O "third_party_packages/Packages.gz" "$BASE_URL/Packages.gz" 2>/dev/null; then
-                         LANG_IPK=$(zgrep -o "Filename:.*${LANG_PATTERN}.*ipk" "third_party_packages/Packages.gz" | head -1 | cut -d' ' -f2)
-                         
-                         if [ -n "$LANG_IPK" ]; then
-                            echo "  ⬇️  下载语言包: $(basename "$LANG_IPK")"
-                            if wget -q -O "third_party_packages/$(basename "$LANG_IPK")" "$BASE_URL/$LANG_IPK"; then
-                               echo "  ✅ 语言包下载成功"
-                               THIRD_PARTY_PACKAGES="$THIRD_PARTY_PACKAGES $LANG_PATTERN"
-                            fi
-                         else
-                            echo "  ⚠️ 未找到语言包: $LANG_PATTERN"
-                         fi
-                         rm -f third_party_packages/Packages.gz
-                      fi
-                   else
-                      echo "  ❌ 下载失败: $FILENAME"
-                      rm -f "third_party_packages/$FILENAME"
-                      FAIL_COUNT=$((FAIL_COUNT + 1))
+                   echo "$DOWNLOAD_URLS" | while read -r url; do
+                      echo "   ⬇️ 下载: $(basename "$url")"
+                      wget -qO "third_party_packages/$(basename "$url")" "$url" || echo "   ⚠️ 下载失败: $url"
+                   done
+                   
+                   PACKAGE_NAMES="$PACKAGE_NAMES luci-theme-argon"
+                   break
+                fi
+                
+                echo "   第 $page 页未找到 ipk 文件,继续查找..."
+             done
+             
+             if [ "$FOUND_IPK" = false ]; then
+                echo "   ⚠️ 警告：在所有 Release 中都未找到 ipk 文件,跳过"
+             fi
+             
+             # 下载语言包
+             LANG_PATTERN="luci-i18n-theme-argon-zh-cn"
+             echo ""
+             echo "🔍 查找语言包: $LANG_PATTERN"
+             
+             if [[ "$VERSION" == "SNAPSHOT" ]]; then
+                BASE_URL="https://downloads.openwrt.org/snapshots/packages/x86_64/luci"
+             else
+                BASE_URL="https://downloads.openwrt.org/releases/$VERSION/packages/x86_64/luci"
+             fi
+             
+             if wget -qO "third_party_packages/Packages.gz" "$BASE_URL/Packages.gz" 2>/dev/null; then
+                LANG_IPK=$(zgrep -o "Filename:.*${LANG_PATTERN}.*ipk" "third_party_packages/Packages.gz" | head -1 | cut -d' ' -f2)
+                
+                if [ -n "$LANG_IPK" ]; then
+                   echo "⬇️ 下载语言包: $(basename "$LANG_IPK")"
+                   if wget -qO "third_party_packages/$(basename "$LANG_IPK")" "$BASE_URL/$LANG_IPK"; then
+                      echo "✅ 语言包下载成功"
                    fi
                 else
-                   echo "  ❌ 在最近 $RELEASE_COUNT 个 releases 中均未找到匹配的 asset"
-                   FAIL_COUNT=$((FAIL_COUNT + 1))
+                   echo "⚠️ 未找到语言包: $LANG_PATTERN"
                 fi
-             else
-                echo "  ⚠️ 无法获取 releases 列表"
-                FAIL_COUNT=$((FAIL_COUNT + 1))
+                rm -f third_party_packages/Packages.gz
              fi
           fi
           
           echo ""
           echo "========================================="
           echo "✅ 第三方 ipk 下载完成"
-          echo "   成功: $SUCCESS_COUNT"
-          echo "   失败: $FAIL_COUNT"
-          echo "   包列表: $THIRD_PARTY_PACKAGES"
+          IPK_COUNT=$(ls third_party_packages/*.ipk 2>/dev/null | wc -l)
+          echo "   下载 $IPK_COUNT 个 ipk 包"
+          if [ -n "$PACKAGE_NAMES" ]; then
+             echo "   包列表:$PACKAGE_NAMES"
+          fi
           echo "========================================="
           
-          if ls third_party_packages/*.ipk 1> /dev/null 2>&1; then
+          if [ "$IPK_COUNT" -gt 0 ]; then
              echo ""
              echo "📁 已下载的 ipk 文件:"
              ls -lh third_party_packages/*.ipk | awk '{print "   " $NF " (" $5 ")"}'
           fi
           
-          echo "THIRD_PARTY_PACKAGES=$THIRD_PARTY_PACKAGES" >> $GITHUB_ENV
+          echo "THIRD_PARTY_PACKAGES=$PACKAGE_NAMES" >> $GITHUB_ENV
 
       - name: 配置构建参数
         working-directory: ./openwrt-ib
