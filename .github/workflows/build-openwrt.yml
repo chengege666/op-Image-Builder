@@ -277,9 +277,9 @@ jobs:
              if [ "$FOUND_IPK" = false ]; then
                 echo "   ⚠️ 警告：在所有 Release 中都未找到 ipk 文件,跳过"
              else
-                # 添加 OpenClash 运行时依赖（已排除 BASE_PACKAGES 中已有的包）
+                # 添加 OpenClash 运行时依赖（需要先移除默认的 dnsmasq 以解决与 dnsmasq-full 的冲突）
                 echo "   📦 添加运行时依赖..."
-                OPENCLASH_DEPS="iptables dnsmasq-full ca-bundle ipset ip-full iptables-mod-tproxy iptables-mod-extra ruby ruby-yaml kmod-tun kmod-inet-diag luci-compat"
+                OPENCLASH_DEPS="-dnsmasq dnsmasq-full iptables ca-bundle ipset ip-full iptables-mod-tproxy iptables-mod-extra ruby ruby-yaml kmod-tun kmod-inet-diag luci-compat"
                 PACKAGE_NAMES="$PACKAGE_NAMES $OPENCLASH_DEPS"
                 echo "   依赖: $OPENCLASH_DEPS"
                 
