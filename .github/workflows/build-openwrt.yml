@@ -73,12 +73,12 @@ on:
         type: boolean
         default: false
       enable_openclash:
-        description: '启用 OpenClash (luci-app-openclash) [rootfs 不兼容，勾选无效]'
+        description: '启用 OpenClash (luci-app-openclash) [rootfs 不支持，勾选无效]'
         required: false
         type: boolean
         default: false
       enable_adguardhome:
-        description: '启用 AdGuardHome (luci-app-adguardhome) [rootfs 不兼容，勾选无效]'
+        description: '启用 AdGuardHome (luci-app-adguardhome) [rootfs 不支持，勾选无效]'
         required: false
         type: boolean
         default: false
