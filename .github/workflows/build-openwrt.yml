@@ -617,13 +617,6 @@ jobs:
              echo "CONFIG_ISO_IMAGES=y" >> .config
           fi
           
-          # 设置 ext4 分区大小（写入 .config，确保 make image 正确读取）
-          # FIRMWARE_SIZE 此时已处理完毕：非 rootfs 下为数字 MB
-          if [[ "${BUILD_TYPE}" != *"rootfs"* ]]; then
-             echo "设置 ext4 分区大小: ${FIRMWARE_SIZE} MB"
-             echo "CONFIG_TARGET_ROOTFS_PARTSIZE=$((FIRMWARE_SIZE * 1024))" >> .config
-          fi
-          
           CUSTOM_PACKAGES=$(cat custom_packages.txt | tr '\n' ' ')
           
           echo "PACKAGES=$BASE_PACKAGES $CUSTOM_PACKAGES" >> $GITHUB_ENV
@@ -633,7 +626,6 @@ jobs:
         run: |
           echo "=== 开始构建固件 ==="
           echo "PACKAGES: $PACKAGES"
-          echo "FIRMWARE_SIZE: ${FIRMWARE_SIZE}"
           echo ""
           echo "=== .config 内容 ==="
           cat .config || true
