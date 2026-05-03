@@ -73,12 +73,12 @@ on:
         type: boolean
         default: false
       enable_openclash:
-        description: '启用 OpenClash (luci-app-openclash)'
+        description: '启用 OpenClash (luci-app-openclash) [rootfs 不兼容，勾选无效]'
         required: false
         type: boolean
         default: false
       enable_adguardhome:
-        description: '启用 AdGuardHome (luci-app-adguardhome)'
+        description: '启用 AdGuardHome (luci-app-adguardhome) [rootfs 不兼容，勾选无效]'
         required: false
         type: boolean
         default: false
@@ -153,6 +153,7 @@ jobs:
           ENABLE_ARGON_THEME: ${{ github.event.inputs.enable_argon_theme }}
           ENABLE_OPENCLASH: ${{ github.event.inputs.enable_openclash }}
           ENABLE_ADGUARDHOME: ${{ github.event.inputs.enable_adguardhome }}
+          BUILD_TYPE: ${{ github.event.inputs.build_type }}
           VERSION: ${{ env.VERSION }}
         run: |
           echo "========================================="
@@ -235,212 +236,220 @@ jobs:
           
           # OpenClash
           if [ "${ENABLE_OPENCLASH}" = "true" ]; then
-             echo ""
-             echo "➡️ 处理: luci-app-openclash"
-             REPO="vernesong/OpenClash"
-             
-             echo "   正在查找包含 ipk 文件的 Release..."
-             FOUND_IPK=false
-             
-             for page in 1 2 3; do
-                API_URL="https://api.github.com/repos/${REPO}/releases?per_page=10&page=${page}"
-                
-                if ! wget -qO /tmp/api_openclash_page${page}.json "$API_URL"; then
-                   echo "   ⚠️ 警告：无法获取 Release 列表 (page $page),跳过"
-                   continue
-                fi
-                
-                RELEASE_COUNT=$(grep -c '"tag_name"' /tmp/api_openclash_page${page}.json || echo "0")
-                if [ "$RELEASE_COUNT" -eq 0 ]; then
-                   echo "   已检查完所有 Release"
-                   break
-                fi
-                
-                DOWNLOAD_URLS=$(grep -o '"browser_download_url": *"[^"]*\.ipk"' /tmp/api_openclash_page${page}.json | cut -d'"' -f4)
-                
-                if [ -n "$DOWNLOAD_URLS" ]; then
-                   echo "   ✅ 在 Release 中找到 ipk 文件"
-                   FOUND_IPK=true
-                   
-                   echo "$DOWNLOAD_URLS" | while read -r url; do
-                      echo "   ⬇️ 下载: $(basename "$url")"
-                      wget -qO "third_party_packages/$(basename "$url")" "$url" || echo "   ⚠️ 下载失败: $url"
-                   done
-                   
-                   PACKAGE_NAMES="$PACKAGE_NAMES luci-app-openclash"
-                   break
-                fi
-                
-                echo "   第 $page 页未找到 ipk 文件,继续查找..."
-             done
-             
-             if [ "$FOUND_IPK" = false ]; then
-                echo "   ⚠️ 警告：在所有 Release 中都未找到 ipk 文件,跳过"
+             if [[ "${BUILD_TYPE}" == *"rootfs"* ]]; then
+                echo "⏭️ 跳过: OpenClash 不兼容 rootfs 构建类型，已忽略"
              else
-                # 添加 OpenClash 运行时依赖（需要先移除默认的 dnsmasq 以解决与 dnsmasq-full 的冲突）
-                echo "   📦 添加运行时依赖..."
-                OPENCLASH_DEPS="-dnsmasq dnsmasq-full iptables ca-bundle ipset ip-full iptables-mod-tproxy iptables-mod-extra ruby ruby-yaml kmod-tun kmod-inet-diag luci-compat"
-                PACKAGE_NAMES="$PACKAGE_NAMES $OPENCLASH_DEPS"
-                echo "   依赖: $OPENCLASH_DEPS"
-                
-                # 下载中文语言包
-                LANG_PATTERN="luci-i18n-openclash-zh-cn"
                 echo ""
-                echo "   🔍 查找语言包: $LANG_PATTERN"
+                echo "➡️ 处理: luci-app-openclash"
+                REPO="vernesong/OpenClash"
                 
-                if [[ "$VERSION" == "SNAPSHOT" ]]; then
-                   BASE_URL="https://downloads.openwrt.org/snapshots/packages/x86_64/luci"
+                echo "   正在查找包含 ipk 文件的 Release..."
+                FOUND_IPK=false
+                
+                for page in 1 2 3; do
+                   API_URL="https://api.github.com/repos/${REPO}/releases?per_page=10&page=${page}"
+                   
+                   if ! wget -qO /tmp/api_openclash_page${page}.json "$API_URL"; then
+                      echo "   ⚠️ 警告：无法获取 Release 列表 (page $page),跳过"
+                      continue
+                   fi
+                   
+                   RELEASE_COUNT=$(grep -c '"tag_name"' /tmp/api_openclash_page${page}.json || echo "0")
+                   if [ "$RELEASE_COUNT" -eq 0 ]; then
+                      echo "   已检查完所有 Release"
+                      break
+                   fi
+                   
+                   DOWNLOAD_URLS=$(grep -o '"browser_download_url": *"[^"]*\.ipk"' /tmp/api_openclash_page${page}.json | cut -d'"' -f4)
+                   
+                   if [ -n "$DOWNLOAD_URLS" ]; then
+                      echo "   ✅ 在 Release 中找到 ipk 文件"
+                      FOUND_IPK=true
+                      
+                      echo "$DOWNLOAD_URLS" | while read -r url; do
+                         echo "   ⬇️ 下载: $(basename "$url")"
+                         wget -qO "third_party_packages/$(basename "$url")" "$url" || echo "   ⚠️ 下载失败: $url"
+                      done
+                      
+                      PACKAGE_NAMES="$PACKAGE_NAMES luci-app-openclash"
+                      break
+                   fi
+                   
+                   echo "   第 $page 页未找到 ipk 文件,继续查找..."
+                done
+                
+                if [ "$FOUND_IPK" = false ]; then
+                   echo "   ⚠️ 警告：在所有 Release 中都未找到 ipk 文件,跳过"
                 else
-                   BASE_URL="https://downloads.openwrt.org/releases/$VERSION/packages/x86_64/luci"
-                fi
-                
-                if wget -qO "third_party_packages/Packages.gz" "$BASE_URL/Packages.gz" 2>/dev/null; then
-                   LANG_IPK=$(zgrep -o "Filename:.*${LANG_PATTERN}.*ipk" "third_party_packages/Packages.gz" | head -1 | cut -d' ' -f2)
+                   # 添加 OpenClash 运行时依赖（需要先移除默认的 dnsmasq 以解决与 dnsmasq-full 的冲突）
+                   echo "   📦 添加运行时依赖..."
+                   OPENCLASH_DEPS="-dnsmasq dnsmasq-full iptables ca-bundle ipset ip-full iptables-mod-tproxy iptables-mod-extra ruby ruby-yaml kmod-tun kmod-inet-diag luci-compat"
+                   PACKAGE_NAMES="$PACKAGE_NAMES $OPENCLASH_DEPS"
+                   echo "   依赖: $OPENCLASH_DEPS"
                    
-                   if [ -n "$LANG_IPK" ]; then
-                      echo "   ⬇️ 下载语言包: $(basename "$LANG_IPK")"
-                      if wget -qO "third_party_packages/$(basename "$LANG_IPK")" "$BASE_URL/$LANG_IPK"; then
-                         echo "   ✅ 语言包下载成功"
-                         PACKAGE_NAMES="$PACKAGE_NAMES $LANG_PATTERN"
-                      fi
+                   # 下载中文语言包
+                   LANG_PATTERN="luci-i18n-openclash-zh-cn"
+                   echo ""
+                   echo "   🔍 查找语言包: $LANG_PATTERN"
+                   
+                   if [[ "$VERSION" == "SNAPSHOT" ]]; then
+                      BASE_URL="https://downloads.openwrt.org/snapshots/packages/x86_64/luci"
                    else
-                      echo "   ⚠️ 未找到语言包: $LANG_PATTERN"
-                   fi
-                   rm -f third_party_packages/Packages.gz
-                fi
-                
-                # 下载 Clash 内核（mihomo）
-                echo ""
-                echo "   🔧 下载 Clash 内核..."
-                KERNEL_REPO="MetaCubeX/mihomo"
-                KERNEL_API="https://api.github.com/repos/${KERNEL_REPO}/releases/latest"
-                
-                KERNEL_JSON=$(curl -sL --retry 3 --retry-delay 5 \
-                   -H "Accept: application/vnd.github+json" \
-                   "$KERNEL_API" 2>/dev/null || echo "")
-                
-                if [ -n "$KERNEL_JSON" ] && ! echo "$KERNEL_JSON" | grep -q '"message"'; then
-                   KERNEL_URL=$(echo "$KERNEL_JSON" | grep -o '"browser_download_url": *"[^"]*linux-amd64-compatible-[^"]*\.gz"' | cut -d'"' -f4)
-                   
-                   if [ -z "$KERNEL_URL" ]; then
-                      KERNEL_URL=$(echo "$KERNEL_JSON" | grep -o '"browser_download_url": *"[^"]*linux-amd64-v1-v[^"]*\.gz"' | cut -d'"' -f4 | head -1)
+                      BASE_URL="https://downloads.openwrt.org/releases/$VERSION/packages/x86_64/luci"
                    fi
                    
-                   if [ -n "$KERNEL_URL" ]; then
-                      KERNEL_FILENAME=$(basename "$KERNEL_URL")
-                      echo "   ⬇️ 下载内核: $KERNEL_FILENAME"
-                      if wget -qO "third_party_packages/$KERNEL_FILENAME" "$KERNEL_URL"; then
-                         echo "   ✅ 内核下载成功"
-                         echo "OPENCLASH_KERNEL=$KERNEL_FILENAME" >> $GITHUB_ENV
+                   if wget -qO "third_party_packages/Packages.gz" "$BASE_URL/Packages.gz" 2>/dev/null; then
+                      LANG_IPK=$(zgrep -o "Filename:.*${LANG_PATTERN}.*ipk" "third_party_packages/Packages.gz" | head -1 | cut -d' ' -f2)
+                      
+                      if [ -n "$LANG_IPK" ]; then
+                         echo "   ⬇️ 下载语言包: $(basename "$LANG_IPK")"
+                         if wget -qO "third_party_packages/$(basename "$LANG_IPK")" "$BASE_URL/$LANG_IPK"; then
+                            echo "   ✅ 语言包下载成功"
+                            PACKAGE_NAMES="$PACKAGE_NAMES $LANG_PATTERN"
+                         fi
                       else
-                         echo "   ⚠️ 内核下载失败"
+                         echo "   ⚠️ 未找到语言包: $LANG_PATTERN"
+                      fi
+                      rm -f third_party_packages/Packages.gz
+                   fi
+                   
+                   # 下载 Clash 内核（mihomo）
+                   echo ""
+                   echo "   🔧 下载 Clash 内核..."
+                   KERNEL_REPO="MetaCubeX/mihomo"
+                   KERNEL_API="https://api.github.com/repos/${KERNEL_REPO}/releases/latest"
+                   
+                   KERNEL_JSON=$(curl -sL --retry 3 --retry-delay 5 \
+                      -H "Accept: application/vnd.github+json" \
+                      "$KERNEL_API" 2>/dev/null || echo "")
+                   
+                   if [ -n "$KERNEL_JSON" ] && ! echo "$KERNEL_JSON" | grep -q '"message"'; then
+                      KERNEL_URL=$(echo "$KERNEL_JSON" | grep -o '"browser_download_url": *"[^"]*linux-amd64-compatible-[^"]*\.gz"' | cut -d'"' -f4)
+                      
+                      if [ -z "$KERNEL_URL" ]; then
+                         KERNEL_URL=$(echo "$KERNEL_JSON" | grep -o '"browser_download_url": *"[^"]*linux-amd64-v1-v[^"]*\.gz"' | cut -d'"' -f4 | head -1)
+                      fi
+                      
+                      if [ -n "$KERNEL_URL" ]; then
+                         KERNEL_FILENAME=$(basename "$KERNEL_URL")
+                         echo "   ⬇️ 下载内核: $KERNEL_FILENAME"
+                         if wget -qO "third_party_packages/$KERNEL_FILENAME" "$KERNEL_URL"; then
+                            echo "   ✅ 内核下载成功"
+                            echo "OPENCLASH_KERNEL=$KERNEL_FILENAME" >> $GITHUB_ENV
+                         else
+                            echo "   ⚠️ 内核下载失败"
+                         fi
+                      else
+                         echo "   ⚠️ 未找到匹配的内核文件"
                       fi
                    else
-                      echo "   ⚠️ 未找到匹配的内核文件"
+                      echo "   ⚠️ 无法获取内核 Release 信息"
                    fi
-                else
-                   echo "   ⚠️ 无法获取内核 Release 信息"
                 fi
              fi
           fi
           
           # AdGuardHome
           if [ "${ENABLE_ADGUARDHOME}" = "true" ]; then
-             echo ""
-             echo "➡️ 处理: luci-app-adguardhome"
-             REPO="rufengsuixing/luci-app-adguardhome"
-             
-             echo "   正在查找包含 ipk 文件的 Release..."
-             FOUND_IPK=false
-             
-             for page in 1 2 3; do
-                API_URL="https://api.github.com/repos/${REPO}/releases?per_page=10&page=${page}"
-                
-                if ! wget -qO /tmp/api_adguardhome_page${page}.json "$API_URL"; then
-                   echo "   ⚠️ 警告：无法获取 Release 列表 (page $page),跳过"
-                   continue
-                fi
-                
-                RELEASE_COUNT=$(grep -c '"tag_name"' /tmp/api_adguardhome_page${page}.json || echo "0")
-                if [ "$RELEASE_COUNT" -eq 0 ]; then
-                   echo "   已检查完所有 Release"
-                   break
-                fi
-                
-                DOWNLOAD_URLS=$(grep -o '"browser_download_url": *"[^"]*\.ipk"' /tmp/api_adguardhome_page${page}.json | cut -d'"' -f4)
-                
-                if [ -n "$DOWNLOAD_URLS" ]; then
-                   echo "   ✅ 在 Release 中找到 ipk 文件"
-                   FOUND_IPK=true
-                   
-                   echo "$DOWNLOAD_URLS" | while read -r url; do
-                      echo "   ⬇️ 下载: $(basename "$url")"
-                      wget -qO "third_party_packages/$(basename "$url")" "$url" || echo "   ⚠️ 下载失败: $url"
-                   done
-                   
-                   PACKAGE_NAMES="$PACKAGE_NAMES luci-app-adguardhome"
-                   break
-                fi
-                
-                echo "   第 $page 页未找到 ipk 文件,继续查找..."
-             done
-             
-             if [ "$FOUND_IPK" = false ]; then
-                echo "   ⚠️ 警告：在所有 Release 中都未找到 ipk 文件,跳过"
+             if [[ "${BUILD_TYPE}" == *"rootfs"* ]]; then
+                echo "⏭️ 跳过: AdGuardHome 不兼容 rootfs 构建类型，已忽略"
              else
-                # 下载中文语言包
-                LANG_PATTERN="luci-i18n-adguardhome-zh-cn"
                 echo ""
-                echo "   🔍 查找语言包: $LANG_PATTERN"
+                echo "➡️ 处理: luci-app-adguardhome"
+                REPO="rufengsuixing/luci-app-adguardhome"
                 
-                if [[ "$VERSION" == "SNAPSHOT" ]]; then
-                   BASE_URL="https://downloads.openwrt.org/snapshots/packages/x86_64/luci"
-                else
-                   BASE_URL="https://downloads.openwrt.org/releases/$VERSION/packages/x86_64/luci"
-                fi
+                echo "   正在查找包含 ipk 文件的 Release..."
+                FOUND_IPK=false
                 
-                if wget -qO "third_party_packages/Packages.gz" "$BASE_URL/Packages.gz" 2>/dev/null; then
-                   LANG_IPK=$(zgrep -o "Filename:.*${LANG_PATTERN}.*ipk" "third_party_packages/Packages.gz" | head -1 | cut -d' ' -f2)
+                for page in 1 2 3; do
+                   API_URL="https://api.github.com/repos/${REPO}/releases?per_page=10&page=${page}"
                    
-                   if [ -n "$LANG_IPK" ]; then
-                      echo "   ⬇️ 下载语言包: $(basename "$LANG_IPK")"
-                      if wget -qO "third_party_packages/$(basename "$LANG_IPK")" "$BASE_URL/$LANG_IPK"; then
-                         echo "   ✅ 语言包下载成功"
-                         PACKAGE_NAMES="$PACKAGE_NAMES $LANG_PATTERN"
-                      fi
-                   else
-                      echo "   ⚠️ 未找到语言包: $LANG_PATTERN"
+                   if ! wget -qO /tmp/api_adguardhome_page${page}.json "$API_URL"; then
+                      echo "   ⚠️ 警告：无法获取 Release 列表 (page $page),跳过"
+                      continue
                    fi
-                   rm -f third_party_packages/Packages.gz
-                fi
-                
-                # 下载 AdGuardHome 核心二进制
-                echo ""
-                echo "   🔧 下载 AdGuardHome 核心程序..."
-                CORE_REPO="AdguardTeam/AdGuardHome"
-                CORE_API="https://api.github.com/repos/${CORE_REPO}/releases/latest"
-                
-                CORE_JSON=$(curl -sL --retry 3 --retry-delay 5 \
-                   -H "Accept: application/vnd.github+json" \
-                   "$CORE_API" 2>/dev/null || echo "")
-                
-                if [ -n "$CORE_JSON" ] && ! echo "$CORE_JSON" | grep -q '"message"'; then
-                   CORE_URL=$(echo "$CORE_JSON" | grep -o '"browser_download_url": *"[^"]*AdGuardHome_linux_amd64\.tar\.gz"' | cut -d'"' -f4)
                    
-                   if [ -n "$CORE_URL" ]; then
-                      CORE_FILENAME=$(basename "$CORE_URL")
-                      echo "   ⬇️ 下载核心: $CORE_FILENAME"
-                      if wget -qO "third_party_packages/$CORE_FILENAME" "$CORE_URL"; then
-                         echo "   ✅ 核心下载成功"
-                         echo "ADGUARDHOME_CORE=$CORE_FILENAME" >> $GITHUB_ENV
+                   RELEASE_COUNT=$(grep -c '"tag_name"' /tmp/api_adguardhome_page${page}.json || echo "0")
+                   if [ "$RELEASE_COUNT" -eq 0 ]; then
+                      echo "   已检查完所有 Release"
+                      break
+                   fi
+                   
+                   DOWNLOAD_URLS=$(grep -o '"browser_download_url": *"[^"]*\.ipk"' /tmp/api_adguardhome_page${page}.json | cut -d'"' -f4)
+                   
+                   if [ -n "$DOWNLOAD_URLS" ]; then
+                      echo "   ✅ 在 Release 中找到 ipk 文件"
+                      FOUND_IPK=true
+                      
+                      echo "$DOWNLOAD_URLS" | while read -r url; do
+                         echo "   ⬇️ 下载: $(basename "$url")"
+                         wget -qO "third_party_packages/$(basename "$url")" "$url" || echo "   ⚠️ 下载失败: $url"
+                      done
+                      
+                      PACKAGE_NAMES="$PACKAGE_NAMES luci-app-adguardhome"
+                      break
+                   fi
+                   
+                   echo "   第 $page 页未找到 ipk 文件,继续查找..."
+                done
+                
+                if [ "$FOUND_IPK" = false ]; then
+                   echo "   ⚠️ 警告：在所有 Release 中都未找到 ipk 文件,跳过"
+                else
+                   # 下载中文语言包
+                   LANG_PATTERN="luci-i18n-adguardhome-zh-cn"
+                   echo ""
+                   echo "   🔍 查找语言包: $LANG_PATTERN"
+                   
+                   if [[ "$VERSION" == "SNAPSHOT" ]]; then
+                      BASE_URL="https://downloads.openwrt.org/snapshots/packages/x86_64/luci"
+                   else
+                      BASE_URL="https://downloads.openwrt.org/releases/$VERSION/packages/x86_64/luci"
+                   fi
+                   
+                   if wget -qO "third_party_packages/Packages.gz" "$BASE_URL/Packages.gz" 2>/dev/null; then
+                      LANG_IPK=$(zgrep -o "Filename:.*${LANG_PATTERN}.*ipk" "third_party_packages/Packages.gz" | head -1 | cut -d' ' -f2)
+                      
+                      if [ -n "$LANG_IPK" ]; then
+                         echo "   ⬇️ 下载语言包: $(basename "$LANG_IPK")"
+                         if wget -qO "third_party_packages/$(basename "$LANG_IPK")" "$BASE_URL/$LANG_IPK"; then
+                            echo "   ✅ 语言包下载成功"
+                            PACKAGE_NAMES="$PACKAGE_NAMES $LANG_PATTERN"
+                         fi
                       else
-                         echo "   ⚠️ 核心下载失败"
+                         echo "   ⚠️ 未找到语言包: $LANG_PATTERN"
+                      fi
+                      rm -f third_party_packages/Packages.gz
+                   fi
+                   
+                   # 下载 AdGuardHome 核心二进制
+                   echo ""
+                   echo "   🔧 下载 AdGuardHome 核心程序..."
+                   CORE_REPO="AdguardTeam/AdGuardHome"
+                   CORE_API="https://api.github.com/repos/${CORE_REPO}/releases/latest"
+                   
+                   CORE_JSON=$(curl -sL --retry 3 --retry-delay 5 \
+                      -H "Accept: application/vnd.github+json" \
+                      "$CORE_API" 2>/dev/null || echo "")
+                   
+                   if [ -n "$CORE_JSON" ] && ! echo "$CORE_JSON" | grep -q '"message"'; then
+                      CORE_URL=$(echo "$CORE_JSON" | grep -o '"browser_download_url": *"[^"]*AdGuardHome_linux_amd64\.tar\.gz"' | cut -d'"' -f4)
+                      
+                      if [ -n "$CORE_URL" ]; then
+                         CORE_FILENAME=$(basename "$CORE_URL")
+                         echo "   ⬇️ 下载核心: $CORE_FILENAME"
+                         if wget -qO "third_party_packages/$CORE_FILENAME" "$CORE_URL"; then
+                            echo "   ✅ 核心下载成功"
+                            echo "ADGUARDHOME_CORE=$CORE_FILENAME" >> $GITHUB_ENV
+                         else
+                            echo "   ⚠️ 核心下载失败"
+                         fi
+                      else
+                         echo "   ⚠️ 未找到 AdGuardHome_linux_amd64.tar.gz"
                       fi
                    else
-                      echo "   ⚠️ 未找到 AdGuardHome_linux_amd64.tar.gz"
+                      echo "   ⚠️ 无法获取核心 Release 信息"
                    fi
-                else
-                   echo "   ⚠️ 无法获取核心 Release 信息"
                 fi
              fi
           fi
