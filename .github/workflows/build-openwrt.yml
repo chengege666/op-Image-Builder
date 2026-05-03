@@ -626,12 +626,19 @@ jobs:
         run: |
           echo "=== 开始构建固件 ==="
           echo "PACKAGES: $PACKAGES"
+          echo "FIRMWARE_SIZE: ${FIRMWARE_SIZE}"
           echo ""
           echo "=== .config 内容 ==="
           cat .config || true
           echo ""
           echo "=== 开始执行 make image ==="
-          make image PACKAGES="$PACKAGES" FILES="files" V=s 2>&1 | tee /tmp/build.log
+          if [ "${FIRMWARE_SIZE}" != "N/A" ] && [ -n "${FIRMWARE_SIZE}" ]; then
+             echo "使用 ROOTFS_PARTSIZE=${FIRMWARE_SIZE}"
+             make image PACKAGES="$PACKAGES" FILES="files" ROOTFS_PARTSIZE="${FIRMWARE_SIZE}" V=s 2>&1 | tee /tmp/build.log
+          else
+             echo "使用默认分区大小"
+             make image PACKAGES="$PACKAGES" FILES="files" V=s 2>&1 | tee /tmp/build.log
+          fi
           BUILD_STATUS=${PIPESTATUS[0]}
           if [ $BUILD_STATUS -ne 0 ]; then
             echo "=== 构建失败，显示最后 100 行日志 ==="
