@@ -639,13 +639,7 @@ jobs:
           cat .config || true
           echo ""
           echo "=== 开始执行 make image ==="
-          if [ "${FIRMWARE_SIZE}" != "N/A" ] && [ -n "${FIRMWARE_SIZE}" ]; then
-             echo "使用 ROOTFS_PARTSIZE=${FIRMWARE_SIZE}"
-             make image PACKAGES="$PACKAGES" FILES="files" ROOTFS_PARTSIZE="${FIRMWARE_SIZE}" V=s 2>&1 | tee /tmp/build.log
-          else
-             echo "使用默认分区大小"
-             make image PACKAGES="$PACKAGES" FILES="files" V=s 2>&1 | tee /tmp/build.log
-          fi
+          make image PACKAGES="$PACKAGES" FILES="files" V=s 2>&1 | tee /tmp/build.log
           BUILD_STATUS=${PIPESTATUS[0]}
           if [ $BUILD_STATUS -ne 0 ]; then
             echo "=== 构建失败，显示最后 100 行日志 ==="
