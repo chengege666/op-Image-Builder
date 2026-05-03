@@ -103,10 +103,14 @@ jobs:
           IFS=',' read -ra IDS <<< "${{ steps.get-releases.outputs.delete_list }}"
           
           for id in "${IDS[@]}"; do
-            tag_name=$(gh api repos/${{ github.repository }}/releases/$id --jq '.tag_name' 2>/dev/null || echo "")
+            # 先获取标签名（在删除 release 之前）
+            tag_name=$(gh api repos/${{ github.repository }}/releases/$id --jq '.tag_name' 2>/dev/null)
             if [ -n "$tag_name" ]; then
               echo "🏷️ 正在删除标签: $tag_name"
-              git push --delete origin "$tag_name" 2>/dev/null || echo "⚠️ 标签 $tag_name 删除失败"
+              # 使用 gh api 删除标签
+              gh api -X DELETE repos/${{ github.repository }}/git/refs/tags/$tag_name 2>/dev/null && \
+                echo "✅ 标签 $tag_name 删除成功" || \
+                echo "⚠️ 标签 $tag_name 删除失败（可能已被删除）"
             fi
           done
           
