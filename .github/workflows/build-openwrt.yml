@@ -386,7 +386,7 @@ jobs:
                          wget -qO "third_party_packages/$(basename "$url")" "$url" || echo "   ⚠️ 下载失败: $url"
                       done
                       
-                      PACKAGE_NAMES="$PACKAGE_NAMES luci-app-adguardhome"
+                      PACKAGE_NAMES="$PACKAGE_NAMES luci-app-adguardhome adguardhome"
                       break
                    fi
                    
@@ -423,8 +423,8 @@ jobs:
                    fi
                    
                    echo ""
-                   echo "   📝 注意: 不预装 AdGuardHome 核心程序"
-                   echo "   安装系统后，请在 AdGuardHome 页面中手动更新核心"
+                   echo "   📝 注意: 已预装 AdGuardHome 核心程序（满足依赖），但已禁用开机自启"
+                   echo "   安装系统后，请先到 AdGuardHome 页面中手动更新核心再启用"
                    echo "   更新地址为:"
                    echo "   https://github.com/AdguardTeam/AdGuardHome/releases/download/.../AdGuardHome_linux_amd64.tar.gz"
                 fi
@@ -461,6 +461,7 @@ jobs:
           ENABLE_PPPOE: ${{ github.event.inputs.enable_pppoe }}
           PPPOE_USER: ${{ github.event.inputs.pppoe_user }}
           PPPOE_PASS: ${{ github.event.inputs.pppoe_pass }}
+          ENABLE_ADGUARDHOME: ${{ github.event.inputs.enable_adguardhome }}
         run: |
           # 【关键修改】rootfs 模式下跳过固件大小处理
           if [[ "${BUILD_TYPE}" == *"rootfs"* ]]; then
@@ -540,6 +541,19 @@ jobs:
              gunzip -c "$KERNEL_GZ" > files/etc/openclash/core/clash_meta
              chmod +x files/etc/openclash/core/clash_meta
              echo "✅ 内核部署完成"
+          fi
+          
+          # 禁用 AdGuardHome 开机自启（用户需手动更新核心后再启用）
+          if [ "${ENABLE_ADGUARDHOME}" == "true" ]; then
+             echo "🔧 禁用 AdGuardHome 开机自启..."
+             mkdir -p files/etc/uci-defaults
+             cat > files/etc/uci-defaults/99-disable-adguardhome <<EOF
+uci set adguardhome.global.enabled='0'
+/etc/init.d/adguardhome disable
+exit 0
+EOF
+             chmod +x files/etc/uci-defaults/99-disable-adguardhome
+             echo "✅ AdGuardHome 已禁用，安装后请手动更新核心再启用"
           fi
           
           if [ "${ENABLE_STORE}" == "true" ]; then
