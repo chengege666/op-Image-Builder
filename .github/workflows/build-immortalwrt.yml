@@ -67,6 +67,16 @@ on:
       pppoe_pass:
         description: 'PPPoE 密码'
         required: false
+      enable_argon_theme:
+        description: '启用 Argon 主题 (luci-theme-argon)'
+        required: false
+        type: boolean
+        default: false
+      enable_openclash:
+        description: '启用 OpenClash (luci-app-openclash) [rootfs 不支持，勾选无效]'
+        required: false
+        type: boolean
+        default: false
 
 permissions:
   contents: write
@@ -135,6 +145,224 @@ jobs:
             tar -xf immortalwrt-ib.${FILE_EXT} -C immortalwrt-ib --strip-components=1
           fi
 
+      - name: 下载第三方 ipk 包
+        env:
+          ENABLE_ARGON_THEME: ${{ github.event.inputs.enable_argon_theme }}
+          ENABLE_OPENCLASH: ${{ github.event.inputs.enable_openclash }}
+          BUILD_TYPE: ${{ github.event.inputs.build_type }}
+          VERSION: ${{ env.VERSION }}
+        run: |
+          echo "========================================="
+          echo "🚀 开始下载第三方 ipk 包"
+          echo "========================================="
+          
+          mkdir -p third_party_packages
+          
+          PACKAGE_NAMES=""
+          
+          if [ "${ENABLE_ARGON_THEME}" = "true" ]; then
+             echo ""
+             echo "➡️ 处理: luci-theme-argon"
+             REPO="jerrykuku/luci-theme-argon"
+             
+             echo "   正在查找包含 ipk 文件的 Release..."
+             FOUND_IPK=false
+             
+             for page in 1 2 3; do
+                API_URL="https://api.github.com/repos/${REPO}/releases?per_page=10&page=${page}"
+                
+                if ! wget -qO /tmp/api_argon_page${page}.json "$API_URL"; then
+                   echo "   ⚠️ 警告：无法获取 Release 列表 (page $page),跳过"
+                   continue
+                fi
+                
+                RELEASE_COUNT=$(grep -c '"tag_name"' /tmp/api_argon_page${page}.json || echo "0")
+                if [ "$RELEASE_COUNT" -eq 0 ]; then
+                   echo "   已检查完所有 Release"
+                   break
+                fi
+                
+                DOWNLOAD_URLS=$(grep -o '"browser_download_url": *"[^"]*\.ipk"' /tmp/api_argon_page${page}.json | cut -d'"' -f4)
+                
+                if [ -n "$DOWNLOAD_URLS" ]; then
+                   echo "   ✅ 在 Release 中找到 ipk 文件"
+                   FOUND_IPK=true
+                   
+                   echo "$DOWNLOAD_URLS" | while read -r url; do
+                      echo "   ⬇️ 下载: $(basename "$url")"
+                      wget -qO "third_party_packages/$(basename "$url")" "$url" || echo "   ⚠️ 下载失败: $url"
+                   done
+                   
+                   PACKAGE_NAMES="$PACKAGE_NAMES luci-theme-argon"
+                   break
+                fi
+                
+                echo "   第 $page 页未找到 ipk 文件,继续查找..."
+             done
+             
+             if [ "$FOUND_IPK" = false ]; then
+                echo "   ⚠️ 警告：在所有 Release 中都未找到 ipk 文件,跳过"
+             fi
+             
+             # 下载语言包
+             LANG_PATTERN="luci-i18n-theme-argon-zh-cn"
+             echo ""
+             echo "🔍 查找语言包: $LANG_PATTERN"
+             
+             if [[ "$VERSION" == "SNAPSHOT" ]]; then
+                BASE_URL="https://downloads.immortalwrt.org/snapshots/packages/x86_64/luci"
+             else
+                BASE_URL="https://downloads.immortalwrt.org/releases/$VERSION/packages/x86_64/luci"
+             fi
+             
+             if wget -qO "third_party_packages/Packages.gz" "$BASE_URL/Packages.gz" 2>/dev/null; then
+                LANG_IPK=$(zgrep -o "Filename:.*${LANG_PATTERN}.*ipk" "third_party_packages/Packages.gz" | head -1 | cut -d' ' -f2)
+                
+                if [ -n "$LANG_IPK" ]; then
+                   echo "⬇️ 下载语言包: $(basename "$LANG_IPK")"
+                   if wget -qO "third_party_packages/$(basename "$LANG_IPK")" "$BASE_URL/$LANG_IPK"; then
+                      echo "✅ 语言包下载成功"
+                   fi
+                else
+                   echo "⚠️ 未找到语言包: $LANG_PATTERN"
+                fi
+                rm -f third_party_packages/Packages.gz
+             fi
+          fi
+          
+          # OpenClash
+          if [ "${ENABLE_OPENCLASH}" = "true" ]; then
+             if [[ "${BUILD_TYPE}" == *"rootfs"* ]]; then
+                echo "⏭️ 跳过: OpenClash 不兼容 rootfs 构建类型，已忽略"
+             else
+                echo ""
+                echo "➡️ 处理: luci-app-openclash"
+                REPO="vernesong/OpenClash"
+                
+                echo "   正在查找包含 ipk 文件的 Release..."
+                FOUND_IPK=false
+                
+                for page in 1 2 3; do
+                   API_URL="https://api.github.com/repos/${REPO}/releases?per_page=10&page=${page}"
+                   
+                   if ! wget -qO /tmp/api_openclash_page${page}.json "$API_URL"; then
+                      echo "   ⚠️ 警告：无法获取 Release 列表 (page $page),跳过"
+                      continue
+                   fi
+                   
+                   RELEASE_COUNT=$(grep -c '"tag_name"' /tmp/api_openclash_page${page}.json || echo "0")
+                   if [ "$RELEASE_COUNT" -eq 0 ]; then
+                      echo "   已检查完所有 Release"
+                      break
+                   fi
+                   
+                   DOWNLOAD_URLS=$(grep -o '"browser_download_url": *"[^"]*\.ipk"' /tmp/api_openclash_page${page}.json | cut -d'"' -f4)
+                   
+                   if [ -n "$DOWNLOAD_URLS" ]; then
+                      echo "   ✅ 在 Release 中找到 ipk 文件"
+                      FOUND_IPK=true
+                      
+                      echo "$DOWNLOAD_URLS" | while read -r url; do
+                         echo "   ⬇️ 下载: $(basename "$url")"
+                         wget -qO "third_party_packages/$(basename "$url")" "$url" || echo "   ⚠️ 下载失败: $url"
+                      done
+                      
+                      PACKAGE_NAMES="$PACKAGE_NAMES luci-app-openclash"
+                      break
+                   fi
+                   
+                   echo "   第 $page 页未找到 ipk 文件,继续查找..."
+                done
+                
+                if [ "$FOUND_IPK" = false ]; then
+                   echo "   ⚠️ 警告：在所有 Release 中都未找到 ipk 文件,跳过"
+                else
+                   # 添加 OpenClash 运行时依赖（需要先移除默认的 dnsmasq 以解决与 dnsmasq-full 的冲突）
+                   echo "   📦 添加运行时依赖..."
+                   OPENCLASH_DEPS="-dnsmasq dnsmasq-full iptables ca-bundle ipset ip-full iptables-mod-tproxy iptables-mod-extra ruby ruby-yaml kmod-tun kmod-inet-diag luci-compat"
+                   PACKAGE_NAMES="$PACKAGE_NAMES $OPENCLASH_DEPS"
+                   echo "   依赖: $OPENCLASH_DEPS"
+                   
+                   # 下载中文语言包
+                   LANG_PATTERN="luci-i18n-openclash-zh-cn"
+                   echo ""
+                   echo "   🔍 查找语言包: $LANG_PATTERN"
+                   
+                   if [[ "$VERSION" == "SNAPSHOT" ]]; then
+                      BASE_URL="https://downloads.immortalwrt.org/snapshots/packages/x86_64/luci"
+                   else
+                      BASE_URL="https://downloads.immortalwrt.org/releases/$VERSION/packages/x86_64/luci"
+                   fi
+                   
+                   if wget -qO "third_party_packages/Packages.gz" "$BASE_URL/Packages.gz" 2>/dev/null; then
+                      LANG_IPK=$(zgrep -o "Filename:.*${LANG_PATTERN}.*ipk" "third_party_packages/Packages.gz" | head -1 | cut -d' ' -f2)
+                      
+                      if [ -n "$LANG_IPK" ]; then
+                         echo "   ⬇️ 下载语言包: $(basename "$LANG_IPK")"
+                         if wget -qO "third_party_packages/$(basename "$LANG_IPK")" "$BASE_URL/$LANG_IPK"; then
+                            echo "   ✅ 语言包下载成功"
+                            PACKAGE_NAMES="$PACKAGE_NAMES $LANG_PATTERN"
+                         fi
+                      else
+                         echo "   ⚠️ 未找到语言包: $LANG_PATTERN"
+                      fi
+                      rm -f third_party_packages/Packages.gz
+                   fi
+                   
+                   # 下载 Clash 内核（mihomo）
+                   echo ""
+                   echo "   🔧 下载 Clash 内核..."
+                   KERNEL_REPO="MetaCubeX/mihomo"
+                   KERNEL_API="https://api.github.com/repos/${KERNEL_REPO}/releases/latest"
+                   
+                   KERNEL_JSON=$(curl -sL --retry 3 --retry-delay 5 \
+                      -H "Accept: application/vnd.github+json" \
+                      "$KERNEL_API" 2>/dev/null || echo "")
+                   
+                   if [ -n "$KERNEL_JSON" ] && ! echo "$KERNEL_JSON" | grep -q '"message"'; then
+                      KERNEL_URL=$(echo "$KERNEL_JSON" | grep -o '"browser_download_url": *"[^"]*linux-amd64-compatible-[^"]*\.gz"' | cut -d'"' -f4)
+                      
+                      if [ -z "$KERNEL_URL" ]; then
+                         KERNEL_URL=$(echo "$KERNEL_JSON" | grep -o '"browser_download_url": *"[^"]*linux-amd64-v1-v[^"]*\.gz"' | cut -d'"' -f4 | head -1)
+                      fi
+                      
+                      if [ -n "$KERNEL_URL" ]; then
+                         KERNEL_FILENAME=$(basename "$KERNEL_URL")
+                         echo "   ⬇️ 下载内核: $KERNEL_FILENAME"
+                         if wget -qO "third_party_packages/$KERNEL_FILENAME" "$KERNEL_URL"; then
+                            echo "   ✅ 内核下载成功"
+                            echo "OPENCLASH_KERNEL=$KERNEL_FILENAME" >> $GITHUB_ENV
+                         else
+                            echo "   ⚠️ 内核下载失败"
+                         fi
+                      else
+                         echo "   ⚠️ 未找到匹配的内核文件"
+                      fi
+                   else
+                      echo "   ⚠️ 无法获取内核 Release 信息"
+                   fi
+                fi
+             fi
+          fi
+          
+          echo ""
+          echo "========================================="
+          echo "✅ 第三方 ipk 下载完成"
+          IPK_COUNT=$(ls third_party_packages/*.ipk 2>/dev/null | wc -l)
+          echo "   下载 $IPK_COUNT 个 ipk 包"
+          if [ -n "$PACKAGE_NAMES" ]; then
+             echo "   包列表:$PACKAGE_NAMES"
+          fi
+          echo "========================================="
+          
+          if [ "$IPK_COUNT" -gt 0 ]; then
+             echo ""
+             echo "📁 已下载的 ipk 文件:"
+             ls -lh third_party_packages/*.ipk | awk '{print "   " $NF " (" $5 ")"}'
+          fi
+          
+          echo "THIRD_PARTY_PACKAGES=$PACKAGE_NAMES" >> $GITHUB_ENV
+
       - name: 配置构建参数
         working-directory: ./immortalwrt-ib
         env:
@@ -147,6 +375,8 @@ jobs:
           ENABLE_PPPOE: ${{ github.event.inputs.enable_pppoe }}
           PPPOE_USER: ${{ github.event.inputs.pppoe_user }}
           PPPOE_PASS: ${{ github.event.inputs.pppoe_pass }}
+          THIRD_PARTY_PACKAGES: ${{ env.THIRD_PARTY_PACKAGES }}
+          OPENCLASH_KERNEL: ${{ env.OPENCLASH_KERNEL }}
         run: |
           # 【修改】rootfs 模式下跳过固件大小处理
           if [[ "${BUILD_TYPE}" == *"rootfs"* ]]; then
@@ -169,6 +399,40 @@ jobs:
           mkdir -p keys
           touch custom_packages.txt
 
+          # 集成第三方 ipk 包
+          if [ -d ../third_party_packages ] && ls ../third_party_packages/*.ipk 1> /dev/null 2>&1; then
+             echo "📦 集成第三方 ipk 包..."
+             mkdir -p packages
+             cp ../third_party_packages/*.ipk packages/
+             
+             THIRD_PARTY_COUNT=$(ls packages/*.ipk 2>/dev/null | wc -l)
+             echo "✅ 找到 $THIRD_PARTY_COUNT 个第三方 ipk 包"
+             
+             # 为第三方包生成 Packages 索引（opkg 需要）
+             echo "🔧 生成 Packages 索引..."
+             (cd packages && ../scripts/gen_packages.sh . > Packages 2>/dev/null || {
+               # 如果 gen_packages.sh 不存在，手动生成简易索引
+               for ipk in *.ipk; do
+                 pkg_name=$(echo "$ipk" | sed 's/_.*//')
+                 echo "Package: $pkg_name"
+                 echo "Filename: $ipk"
+                 echo ""
+               done > Packages
+             })
+             gzip -c packages/Packages > packages/Packages.gz 2>/dev/null || true
+             
+             # 添加第三方软件源
+             echo "src custom file://$(pwd)/packages" >> repositories.conf
+             
+             # 添加第三方包到自定义列表
+             if [ -n "$THIRD_PARTY_PACKAGES" ]; then
+                echo "$THIRD_PARTY_PACKAGES" >> custom_packages.txt
+                echo "✅ 已添加第三方包: $THIRD_PARTY_PACKAGES"
+             fi
+          else
+             echo "⚠️ 未找到第三方 ipk 包，跳过集成"
+          fi
+
           # 脚本文件存在性检查（优化：缺失时输出警告）
           if ls ../scripts/*.sh 1> /dev/null 2>&1; then
              chmod +x ../scripts/*.sh
@@ -182,6 +446,17 @@ jobs:
              [ -f ../scripts/set_pppoe.sh ] && ../scripts/set_pppoe.sh
           else
              echo "⚠️ 警告：未找到 ../scripts/ 目录或任何 .sh 脚本，跳过自定义配置（IP/Docker/PPPoE 等）"
+          fi
+          
+          # 部署 OpenClash 内核
+          if [ -n "$OPENCLASH_KERNEL" ] && [ -f "../third_party_packages/$OPENCLASH_KERNEL" ]; then
+             echo "🔧 部署 OpenClash 内核..."
+             mkdir -p files/etc/openclash/core
+             KERNEL_GZ="../third_party_packages/$OPENCLASH_KERNEL"
+             echo "   解压内核: $OPENCLASH_KERNEL"
+             gunzip -c "$KERNEL_GZ" > files/etc/openclash/core/clash_meta
+             chmod +x files/etc/openclash/core/clash_meta
+             echo "✅ 内核部署完成"
           fi
           
           # 处理 iStore 的本地源（优化：下载失败时终止构建）
