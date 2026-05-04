@@ -112,9 +112,9 @@ jobs:
         uses: actions/cache@v4
         with:
           path: openwrt-ib
-          key: openwrt-ib-${{ env.VERSION }}-${{ runner.os }}
+          key: openwrt-ib-${{ github.event.inputs.luci_version }}-${{ runner.os }}
           restore-keys: |
-            openwrt-ib-${{ env.VERSION }}-
+            openwrt-ib-${{ github.event.inputs.luci_version }}-
 
       - name: 下载并解压 Image Builder（缓存未命中时）
         if: steps.cache-ib.outputs.cache-hit != 'true'
