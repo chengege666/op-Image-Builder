@@ -386,7 +386,7 @@ jobs:
                          wget -qO "third_party_packages/$(basename "$url")" "$url" || echo "   ⚠️ 下载失败: $url"
                       done
                       
-                      PACKAGE_NAMES="$PACKAGE_NAMES luci-app-adguardhome"
+                      PACKAGE_NAMES="$PACKAGE_NAMES luci-app-adguardhome adguardhome"
                       break
                    fi
                    
