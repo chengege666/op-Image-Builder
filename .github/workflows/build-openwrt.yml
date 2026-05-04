@@ -445,9 +445,9 @@ jobs:
              echo "src custom file://$(pwd)/packages" >> repositories.conf
              
              # 添加第三方包到自定义列表
-             if [ -n "${{ env.THIRD_PARTY_PACKAGES }}" ]; then
-                echo "${{ env.THIRD_PARTY_PACKAGES }}" >> custom_packages.txt
-                echo "✅ 已添加第三方包: ${{ env.THIRD_PARTY_PACKAGES }}"
+             if [ -n "$THIRD_PARTY_PACKAGES" ]; then
+                echo "$THIRD_PARTY_PACKAGES" >> custom_packages.txt
+                echo "✅ 已添加第三方包: $THIRD_PARTY_PACKAGES"
              fi
           else
              echo "⚠️ 未找到第三方 ipk 包，跳过集成"
@@ -468,11 +468,11 @@ jobs:
           fi
           
           # 部署 OpenClash 内核
-          if [ -n "${{ env.OPENCLASH_KERNEL }}" ] && [ -f "../third_party_packages/${{ env.OPENCLASH_KERNEL }}" ]; then
+          if [ -n "$OPENCLASH_KERNEL" ] && [ -f "../third_party_packages/$OPENCLASH_KERNEL" ]; then
              echo "🔧 部署 OpenClash 内核..."
              mkdir -p files/etc/openclash/core
-             KERNEL_GZ="../third_party_packages/${{ env.OPENCLASH_KERNEL }}"
-             echo "   解压内核: ${{ env.OPENCLASH_KERNEL }}"
+             KERNEL_GZ="../third_party_packages/$OPENCLASH_KERNEL"
+             echo "   解压内核: $OPENCLASH_KERNEL"
              gunzip -c "$KERNEL_GZ" > files/etc/openclash/core/clash_meta
              chmod +x files/etc/openclash/core/clash_meta
              echo "✅ 内核部署完成"
@@ -620,7 +620,7 @@ EOF
 
       - name: 发布到 GitHub Release
         uses: softprops/action-gh-release@v2
-        if: github.event.inputs.auto_release == 'true'
+        if: github.event.inputs.auto_release
         with:
           tag_name: v${{ env.VERSION }}-${{ github.run_id }}
           name: OpenWrt ${{ env.VERSION }} x86_64
