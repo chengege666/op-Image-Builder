@@ -386,7 +386,7 @@ jobs:
                          wget -qO "third_party_packages/$(basename "$url")" "$url" || echo "   ⚠️ 下载失败: $url"
                       done
                       
-                      PACKAGE_NAMES="$PACKAGE_NAMES luci-app-adguardhome adguardhome"
+                      PACKAGE_NAMES="$PACKAGE_NAMES luci-app-adguardhome"
                       break
                    fi
                    
@@ -422,8 +422,11 @@ jobs:
                       rm -f third_party_packages/Packages.gz
                    fi
                    
-                   # 下载 AdGuardHome 核心（参考地址，手动更新用）
-                   # 下载地址: https://github.com/AdguardTeam/AdGuardHome/releases/download/${Cloud_Version}/AdGuardHome_linux_${Arch}.tar.gz
+                   echo ""
+                   echo "   📝 注意: 不预装 AdGuardHome 核心程序"
+                   echo "   安装系统后，请在 AdGuardHome 页面中手动更新核心"
+                   echo "   更新地址为:"
+                   echo "   https://github.com/AdguardTeam/AdGuardHome/releases/download/.../AdGuardHome_linux_amd64.tar.gz"
                 fi
              fi
           fi
@@ -595,7 +598,11 @@ jobs:
           cat .config || true
           echo ""
           echo "=== 开始执行 make image ==="
-          make image PACKAGES="$PACKAGES" FILES="files" V=s 2>&1 | tee /tmp/build.log
+          if [[ "${BUILD_TYPE}" != *"rootfs"* ]]; then
+            make image PACKAGES="$PACKAGES" FILES="files" ROOTFS_PARTSIZE="${FIRMWARE_SIZE}" V=s 2>&1 | tee /tmp/build.log
+          else
+            make image PACKAGES="$PACKAGES" FILES="files" V=s 2>&1 | tee /tmp/build.log
+          fi
           BUILD_STATUS=${PIPESTATUS[0]}
           if [ $BUILD_STATUS -ne 0 ]; then
             echo "=== 构建失败，显示最后 100 行日志 ==="
