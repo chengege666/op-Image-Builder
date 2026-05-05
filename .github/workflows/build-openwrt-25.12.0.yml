@@ -28,6 +28,19 @@ on:
         description: '路由器管理地址 (LAN IP)'
         required: true
         default: '192.168.1.1'
+      enable_pppoe:
+        description: '启用 PPPoE 拨号配置'
+        required: false
+        type: boolean
+        default: false
+      pppoe_username:
+        description: 'PPPoE 用户名'
+        required: false
+        default: ''
+      pppoe_password:
+        description: 'PPPoE 密码'
+        required: false
+        default: ''
       auto_release:
         description: '构建成功后是否自动发布到 GitHub Release'
         required: false
@@ -90,6 +103,9 @@ jobs:
           LAN_IP: ${{ github.event.inputs.lan_ip }}
           FIRMWARE_SIZE: ${{ github.event.inputs.firmware_size }}
           BUILD_TYPE: ${{ github.event.inputs.build_type }}
+          ENABLE_PPPOE: ${{ github.event.inputs.enable_pppoe }}
+          PPPOE_USER: ${{ github.event.inputs.pppoe_username }}
+          PPPOE_PASS: ${{ github.event.inputs.pppoe_password }}
         run: |
           echo "FIRMWARE_SIZE=$FIRMWARE_SIZE" >> $GITHUB_ENV
           
@@ -105,6 +121,9 @@ jobs:
              if [[ "${BUILD_TYPE}" != "rootfs" ]] && [ -f ../scripts/set_partition.sh ]; then
                  ../scripts/set_partition.sh
              fi
+             
+             # 配置 PPPoE 拨号
+             [ -f ../scripts/set_pppoe.sh ] && ../scripts/set_pppoe.sh
           fi
           
           # 基础包列表 - 补全网卡驱动和核心组件
@@ -177,6 +196,7 @@ jobs:
             用户名: root
             密码: (无)
             固件大小: ${{ github.event.inputs.firmware_size }}MB
+            PPPoE: ${{ github.event.inputs.enable_pppoe == 'true' && '已启用' || '未启用' }}
           files: firmware/*
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
