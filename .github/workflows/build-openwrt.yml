@@ -474,10 +474,12 @@ jobs:
           BASE_PACKAGES="-dnsmasq dnsmasq-full luci luci-base luci-ssl uhttpd uhttpd-mod-ubus \
           luci-i18n-base-zh-cn luci-i18n-firewall-zh-cn \
           luci-app-ttyd luci-i18n-ttyd-zh-cn \
+          luci-app-filetransfer luci-i18n-filetransfer-zh-cn \
           openssh-sftp-server \
           bash curl wget-ssl tar unzip bind-dig \
+          htop \
           kmod-usb-storage kmod-usb-storage-uas kmod-fs-ext4 kmod-fs-vfat kmod-fs-exfat \
-          block-mount fdisk e2fsprogs lsblk parted"
+          block-mount fdisk gdisk dosfstools e2fsprogs lsblk parted"
 
           if [[ "$VERSION" == "24.10."* ]] || [[ "$VERSION" == "SNAPSHOT" ]]; then
               BASE_PACKAGES="$BASE_PACKAGES luci-i18n-package-manager-zh-cn"
