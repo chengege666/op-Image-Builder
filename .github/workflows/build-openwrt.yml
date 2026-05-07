@@ -509,7 +509,7 @@ jobs:
           if [ "${ENABLE_STORE}" == "true" ]; then
              echo "正在下载 iStore 离线包..."
              mkdir -p packages
-             wget -r -np -nd -A "luci-app-store*.ipk,luci-lib-taskd*.ipk,taskd*.ipk,luci-lib-xterm*.ipk,Packages,Packages.gz,Packages.sig" -P packages https://istore.linkease.com/repo/all/store/ || true
+             wget -r -np -nd -A "luci-app-store*.ipk,luci-lib-taskd*.ipk,taskd*.ipk,luci-lib-xterm*.ipk" -P packages https://istore.linkease.com/repo/all/store/ || true
              
              IPK_COUNT=$(ls packages/*.ipk 2>/dev/null | wc -l)
              if [ "$IPK_COUNT" -eq 0 ]; then
@@ -519,6 +519,21 @@ jobs:
              else
                 echo "✅ 成功下载 $IPK_COUNT 个 iStore 相关 ipk 包"
                 echo "luci-app-store taskd luci-lib-taskd luci-lib-xterm" >> custom_packages.txt
+             fi
+          fi
+
+          # 统一重新生成 Packages 索引（确保第三方包 + iStore 包都被收录）
+          if [ -d packages ] && ls packages/*.ipk 1> /dev/null 2>&1; then
+             echo "🔧 重新生成 Packages 索引..."
+             (cd packages && for ipk in *.ipk; do
+                pkg_name=$(echo "$ipk" | sed 's/_.*//')
+                echo "Package: $pkg_name"
+                echo "Filename: $ipk"
+                echo ""
+             done > Packages)
+             gzip -c packages/Packages > packages/Packages.gz 2>/dev/null || true
+             # 确保 src custom 只添加一次
+             if ! grep -q "^src custom " repositories.conf 2>/dev/null; then
                 echo "src custom file://$(pwd)/packages" >> repositories.conf
              fi
           fi
