@@ -72,11 +72,6 @@ on:
         required: false
         type: boolean
         default: false
-      enable_aurora_theme:
-        description: '启用 Aurora 主题 (luci-theme-aurora)'
-        required: false
-        type: boolean
-        default: false
       enable_openclash:
         description: '启用 OpenClash (luci-app-openclash) [rootfs 不支持，勾选无效]'
         required: false
@@ -151,7 +146,6 @@ jobs:
       - name: 下载第三方 ipk 包
         env:
           ENABLE_ARGON_THEME: ${{ github.event.inputs.enable_argon_theme }}
-          ENABLE_AURORA_THEME: ${{ github.event.inputs.enable_aurora_theme }}
           ENABLE_OPENCLASH: ${{ github.event.inputs.enable_openclash }}
           BUILD_TYPE: ${{ github.event.inputs.build_type }}
           VERSION: ${{ env.VERSION }}
@@ -231,52 +225,6 @@ jobs:
                    echo "⚠️ 未找到语言包: $LANG_PATTERN"
                 fi
                 rm -f third_party_packages/Packages.gz
-             fi
-          fi
-          
-          # luci-theme-aurora
-          if [ "${ENABLE_AURORA_THEME}" = "true" ]; then
-             echo ""
-             echo "➡️ 处理: luci-theme-aurora"
-             REPO="eamonxg/luci-theme-aurora"
-             
-             echo "   正在查找包含 ipk 文件的 Release..."
-             FOUND_IPK=false
-             
-             for page in 1 2 3; do
-                API_URL="https://api.github.com/repos/${REPO}/releases?per_page=10&page=${page}"
-                
-                if ! wget -qO /tmp/api_aurora_page${page}.json "$API_URL"; then
-                   echo "   ⚠️ 警告：无法获取 Release 列表 (page $page),跳过"
-                   continue
-                fi
-                
-                RELEASE_COUNT=$(grep -c '"tag_name"' /tmp/api_aurora_page${page}.json || echo "0")
-                if [ "$RELEASE_COUNT" -eq 0 ]; then
-                   echo "   已检查完所有 Release"
-                   break
-                fi
-                
-                DOWNLOAD_URLS=$(grep -o '"browser_download_url": *"[^"]*\.ipk"' /tmp/api_aurora_page${page}.json | cut -d'"' -f4)
-                
-                if [ -n "$DOWNLOAD_URLS" ]; then
-                   echo "   ✅ 在 Release 中找到 ipk 文件"
-                   FOUND_IPK=true
-                   
-                   echo "$DOWNLOAD_URLS" | while read -r url; do
-                      echo "   ⬇️ 下载: $(basename "$url")"
-                      wget -qO "third_party_packages/$(basename "$url")" "$url" || echo "   ⚠️ 下载失败: $url"
-                   done
-                   
-                   PACKAGE_NAMES="$PACKAGE_NAMES luci-theme-aurora"
-                   break
-                fi
-                
-                echo "   第 $page 页未找到 ipk 文件,继续查找..."
-             done
-             
-             if [ "$FOUND_IPK" = false ]; then
-                echo "   ⚠️ 警告：在所有 Release 中都未找到 ipk 文件,跳过"
              fi
           fi
           
@@ -509,7 +457,7 @@ jobs:
           if [ "${ENABLE_STORE}" == "true" ]; then
              echo "正在下载 iStore 离线包..."
              mkdir -p packages
-             wget -r -np -nd -A "luci-app-store*.ipk,luci-lib-taskd*.ipk,taskd*.ipk,luci-lib-xterm*.ipk" -P packages https://istore.linkease.com/repo/all/store/ || true
+             wget -r -np -nd -A "luci-app-store*.ipk,luci-lib-taskd*.ipk,taskd*.ipk,luci-lib-xterm*.ipk,Packages,Packages.gz,Packages.sig" -P packages https://istore.linkease.com/repo/all/store/ || true
              
              IPK_COUNT=$(ls packages/*.ipk 2>/dev/null | wc -l)
              if [ "$IPK_COUNT" -eq 0 ]; then
@@ -519,21 +467,6 @@ jobs:
              else
                 echo "✅ 成功下载 $IPK_COUNT 个 iStore 相关 ipk 包"
                 echo "luci-app-store taskd luci-lib-taskd luci-lib-xterm" >> custom_packages.txt
-             fi
-          fi
-
-          # 统一重新生成 Packages 索引（确保第三方包 + iStore 包都被收录）
-          if [ -d packages ] && ls packages/*.ipk 1> /dev/null 2>&1; then
-             echo "🔧 重新生成 Packages 索引..."
-             (cd packages && for ipk in *.ipk; do
-                pkg_name=$(echo "$ipk" | sed 's/_.*//')
-                echo "Package: $pkg_name"
-                echo "Filename: $ipk"
-                echo ""
-             done > Packages)
-             gzip -c packages/Packages > packages/Packages.gz 2>/dev/null || true
-             # 确保 src custom 只添加一次
-             if ! grep -q "^src custom " repositories.conf 2>/dev/null; then
                 echo "src custom file://$(pwd)/packages" >> repositories.conf
              fi
           fi
