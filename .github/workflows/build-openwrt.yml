@@ -476,9 +476,8 @@ jobs:
           luci-app-ttyd luci-i18n-ttyd-zh-cn \
           openssh-sftp-server \
           bash curl wget-ssl tar unzip bind-dig \
-          htop \
           kmod-usb-storage kmod-usb-storage-uas kmod-fs-ext4 kmod-fs-vfat kmod-fs-exfat \
-          block-mount fdisk gdisk dosfstools e2fsprogs lsblk parted"
+          block-mount fdisk e2fsprogs lsblk parted"
 
           if [[ "$VERSION" == "24.10."* ]] || [[ "$VERSION" == "SNAPSHOT" ]]; then
               BASE_PACKAGES="$BASE_PACKAGES luci-i18n-package-manager-zh-cn"
