@@ -14,10 +14,10 @@ on:
       version:
         description: 'OpenWrt 版本'
         required: true
-        default: '25.12.2'
+        default: '25.12.3'
         type: choice
         options:
-          - '25.12.2'
+          - '25.12.3'
           - '25.12.0'
       auto_release:
         description: '构建成功后是否自动发布到 GitHub Release'
