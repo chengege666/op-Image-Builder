@@ -159,31 +159,48 @@ jobs:
       - name: 整理构建产物
         env:
           BUILD_TYPE: ${{ github.event.inputs.build_type }}
+          VERSION: ${{ github.event.inputs.version }}
         run: |
           mkdir -p firmware
           
-          # 根据构建类型筛选并复制文件
-          if [[ "${BUILD_TYPE}" == "squashfs_ext4" ]]; then
-             find immortalwrt-ib/bin/targets/x86/64 -name "*.img.gz" ! -name "*rootfs*" -exec cp {} firmware/ \;
-          elif [[ "${BUILD_TYPE}" == "rootfs" ]]; then
+          echo "=== 诊断信息 ==="
+          echo "选择的构建类型: ${BUILD_TYPE}"
+          
+          echo "=== Image Builder 输出的构建结果 ==="
+          ls -lh immortalwrt-ib/bin/targets/x86/64/ || true
+          echo "==================================="
+          
+          if [[ "${BUILD_TYPE}" == *"squashfs_ext4"* ]]; then
+             echo "➡️ 常规模式，保留 .img.* 固件文件..."
+             find immortalwrt-ib/bin/targets/x86/64 -name "*.img.*" ! -name "*rootfs*" ! -name "*targz*" -exec cp {} firmware/ \;
+          elif [[ "${BUILD_TYPE}" == *"rootfs"* ]]; then
+             echo "➡️ Rootfs 模式，保留 rootfs 文件..."
              find immortalwrt-ib/bin/targets/x86/64 -name "*rootfs.tar.gz" -exec cp {} firmware/ \;
-          elif [[ "${BUILD_TYPE}" == "both" ]]; then
-             find immortalwrt-ib/bin/targets/x86/64 -name "*.img.gz" ! -name "*rootfs*" -exec cp {} firmware/ \;
-             find immortalwrt-ib/bin/targets/x86/64 -name "*rootfs.tar.gz" -exec cp {} firmware/ \;
+          else
+             echo "⚠️ 未知的构建类型！将复制所有镜像文件..."
+             find immortalwrt-ib/bin/targets/x86/64 -name "*.img.*" -exec cp {} firmware/ \;
           fi
           
-          # 提取附加信息
+          echo "➡️ 提取附加信息文件..."
           cp immortalwrt-ib/bin/targets/x86/64/sha256sums firmware/ 2>/dev/null || true
           cp immortalwrt-ib/bin/targets/x86/64/profiles.json firmware/ 2>/dev/null || true
           
           cd firmware
+          echo "=== 准备打包的文件 ==="
           ls -lh
+          
+          if [ -z "$(ls -A .)" ]; then
+              echo "Error: 在 firmware 目录中没有找到任何文件！请检查上面 if 匹配逻辑。"
+              exit 1
+          fi
+          
+          zip -r "ImmortalWrt_x86_64_${VERSION}.zip" ./*
 
       - name: 上传固件 Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: ImmortalWrt-${{ github.event.inputs.version }}-Firmware
-          path: firmware/*
+          name: ImmortalWrt_x86_64_Firmware
+          path: firmware/
 
       - name: 发布到 GitHub Release
         uses: softprops/action-gh-release@v1
