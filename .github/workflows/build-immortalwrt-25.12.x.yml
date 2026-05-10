@@ -217,6 +217,13 @@ jobs:
             密码: (无)
             固件大小: ${{ github.event.inputs.firmware_size }}MB
             PPPoE: ${{ github.event.inputs.enable_pppoe == 'true' && '已启用' || '未启用' }}
+            
+            ---
+            📖 固件说明
+            • EFI 固件（-efi）: 支持 UEFI 启动，适用于现代主板
+            • BIOS 固件: 支持 Legacy 启动，适用于老主板
+            • squashfs: 只读压缩系统分区
+            • ext4: 可读写用户分区
           files: firmware/*
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
