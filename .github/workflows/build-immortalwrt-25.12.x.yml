@@ -220,10 +220,10 @@ jobs:
             
             ---
             📖 固件说明
-            • EFI 固件（-efi）: 支持 UEFI 启动，适用于现代主板
-            • BIOS 固件: 支持 Legacy 启动，适用于老主板
-            • squashfs: 只读压缩系统分区
-            • ext4: 可读写用户分区
+            ${{ github.event.inputs.build_type == 'rootfs' && '• rootfs: 容器/LXC 专用固件' || '• EFI 固件（-efi）: 支持 UEFI 启动，适用于现代主板' }}
+            ${{ github.event.inputs.build_type == 'rootfs' && '• 适用于 Docker、LXC 等容器环境' || '• BIOS 固件: 支持 Legacy 启动，适用于老主板' }}
+            ${{ github.event.inputs.build_type == 'rootfs' && '• 不支持直接刷入物理机' || '• squashfs: 只读压缩系统分区' }}
+            ${{ github.event.inputs.build_type == 'rootfs' && '' || '• ext4: 可读写用户分区' }}
           files: firmware/*
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
