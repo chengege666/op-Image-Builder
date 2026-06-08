@@ -1,0 +1,65 @@
+name: 清理所有 Releases（发布包-标签）
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  cleanup-releases:
+    name: 清理所有 Releases
+    runs-on: ubuntu-latest
+    steps:
+      - name: 检出仓库
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: 清理所有 Releases
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # 获取所有 releases
+          releases=$(gh api repos/${{ github.repository }}/releases --paginate | jq -r '.[] | "\(.id)|\(.tag_name)"')
+
+          total=$(echo "$releases" | grep -c . || echo "0")
+          echo "📊 当前 Release 总数: $total"
+
+          if [ "$total" -eq 0 ]; then
+            echo "✅ 没有需要清理的 Release"
+            exit 0
+          fi
+
+          echo "�️ 开始清理所有 Release..."
+
+          while IFS='|' read -r id tag; do
+            echo "🗑️ 正在删除 Release: $tag"
+            gh api -X DELETE repos/${{ github.repository }}/releases/$id && \
+              echo "✅ Release $tag 删除成功" || \
+              echo "⚠️ Release $tag 删除失败"
+          done <<< "$releases"
+
+          echo "✅ Release 清理完成"
+
+      - name: 清理所有 Git 标签
+        run: |
+          all_tags=$(git tag)
+          tag_count=$(echo "$all_tags" | grep -c . || echo "0")
+          echo "📊 当前标签总数: $tag_count"
+
+          if [ "$tag_count" -eq 0 ]; then
+            echo "✅ 没有需要清理的标签"
+            exit 0
+          fi
+
+          echo "�️ 开始清理所有标签..."
+
+          echo "$all_tags" | while read -r tag; do
+            echo "🗑️ 正在删除标签: $tag"
+            git push --delete origin "$tag" 2>/dev/null && \
+              echo "✅ 标签 $tag 删除成功" || \
+              echo "⚠️ 标签 $tag 删除失败"
+          done
+
+          echo "✅ 标签清理完成"

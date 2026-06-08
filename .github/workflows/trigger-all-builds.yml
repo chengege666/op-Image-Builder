@@ -1,0 +1,206 @@
+name: 一键触发所有构建（固件）
+
+on:
+  workflow_dispatch:
+    inputs:
+      auto_release:
+        description: '构建成功后是否自动发布到 GitHub Release'
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  actions: write
+
+jobs:
+  trigger-all:
+    name: 触发所有构建工作流
+    runs-on: ubuntu-latest
+    steps:
+      - name: 触发所有构建
+        env:
+          GH_TOKEN: ${{ github.token }}
+          AUTO_RELEASE: ${{ github.event.inputs.auto_release }}
+        run: |
+          REPO="${{ github.repository }}"
+          REF="${{ github.ref }}"
+
+          trigger_workflow() {
+            local workflow=$1
+            local payload=$2
+            local desc=$3
+
+            echo "🚀 触发: $desc"
+
+            if echo "$payload" | gh api -X POST "/repos/$REPO/actions/workflows/$workflow/dispatches" --input - 2>&1; then
+              echo "✅ 触发成功"
+            else
+              echo "⚠️ 触发失败"
+            fi
+            echo ""
+          }
+
+          # ========== OpenWrt x86_64 (24.10.x/SNAPSHOT) ==========
+          # squashfs_ext4
+          trigger_workflow "build-openwrt.yml" "$(cat <<EOF
+          {
+            "ref": "$REF",
+            "inputs": {
+              "luci_version": "24.10.7",
+              "build_type": "squashfs_ext4 (物理机/通用)",
+              "firmware_size": "3900",
+              "lan_ip": "192.168.1.1",
+              "enable_store": "true",
+              "enable_docker": "false",
+              "enable_pppoe": "false",
+              "enable_argon_theme": "true",
+              "enable_openclash": "false",
+              "auto_release": "$AUTO_RELEASE"
+            }
+          }
+          EOF
+          )" "OpenWrt 24.10.7 squashfs_ext4"
+
+          # rootfs
+          trigger_workflow "build-openwrt.yml" "$(cat <<EOF
+          {
+            "ref": "$REF",
+            "inputs": {
+              "luci_version": "24.10.7",
+              "build_type": "rootfs (容器/LXC)",
+              "firmware_size": "1024",
+              "lan_ip": "192.168.1.1",
+              "enable_store": "true",
+              "enable_docker": "false",
+              "enable_pppoe": "false",
+              "enable_argon_theme": "true",
+              "enable_openclash": "false",
+              "auto_release": "$AUTO_RELEASE"
+            }
+          }
+          EOF
+          )" "OpenWrt 24.10.7 rootfs"
+
+          # ========== OpenWrt x86_64 (25.12.x) - 无 iStore/主题参数 ==========
+          # squashfs_ext4
+          trigger_workflow "build-openwrt-25.12.0.yml" "$(cat <<EOF
+          {
+            "ref": "$REF",
+            "inputs": {
+              "version": "25.12.4",
+              "build_type": "squashfs_ext4 (物理机/通用)",
+              "firmware_size": "3900",
+              "lan_ip": "192.168.1.1",
+              "enable_pppoe": "false",
+              "auto_release": "$AUTO_RELEASE"
+            }
+          }
+          EOF
+          )" "OpenWrt 25.12.4 squashfs_ext4"
+
+          # rootfs
+          trigger_workflow "build-openwrt-25.12.0.yml" "$(cat <<EOF
+          {
+            "ref": "$REF",
+            "inputs": {
+              "version": "25.12.4",
+              "build_type": "rootfs (容器/LXC)",
+              "firmware_size": "2048",
+              "lan_ip": "192.168.1.1",
+              "enable_pppoe": "false",
+              "auto_release": "$AUTO_RELEASE"
+            }
+          }
+          EOF
+          )" "OpenWrt 25.12.4 rootfs"
+
+          # ========== ImmortalWrt x86_64 (24.10.x/SNAPSHOT) ==========
+          # squashfs_ext4
+          trigger_workflow "build-immortalwrt.yml" "$(cat <<EOF
+          {
+            "ref": "$REF",
+            "inputs": {
+              "immortalwrt_version": "24.10.6",
+              "build_type": "squashfs_ext4 (物理机/通用)",
+              "firmware_size": "3900",
+              "lan_ip": "192.168.1.1",
+              "enable_store": "true",
+              "enable_docker": "false",
+              "enable_pppoe": "false",
+              "enable_argon_theme": "true",
+              "enable_openclash": "false",
+              "auto_release": "$AUTO_RELEASE"
+            }
+          }
+          EOF
+          )" "ImmortalWrt 24.10.6 squashfs_ext4"
+
+          # rootfs
+          trigger_workflow "build-immortalwrt.yml" "$(cat <<EOF
+          {
+            "ref": "$REF",
+            "inputs": {
+              "immortalwrt_version": "24.10.6",
+              "build_type": "rootfs (容器/LXC)",
+              "firmware_size": "1024",
+              "lan_ip": "192.168.1.1",
+              "enable_store": "true",
+              "enable_docker": "false",
+              "enable_pppoe": "false",
+              "enable_argon_theme": "true",
+              "enable_openclash": "false",
+              "auto_release": "$AUTO_RELEASE"
+            }
+          }
+          EOF
+          )" "ImmortalWrt 24.10.6 rootfs"
+
+          # ========== ImmortalWrt x86_64 (25.12.x) - 无 iStore/主题参数 ==========
+          # squashfs_ext4
+          trigger_workflow "build-immortalwrt-25.12.x.yml" "$(cat <<EOF
+          {
+            "ref": "$REF",
+            "inputs": {
+              "version": "25.12.0",
+              "build_type": "squashfs_ext4 (物理机/通用)",
+              "firmware_size": "3900",
+              "lan_ip": "192.168.1.1",
+              "enable_pppoe": "false",
+              "auto_release": "$AUTO_RELEASE"
+            }
+          }
+          EOF
+          )" "ImmortalWrt 25.12.0 squashfs_ext4"
+
+          # rootfs
+          trigger_workflow "build-immortalwrt-25.12.x.yml" "$(cat <<EOF
+          {
+            "ref": "$REF",
+            "inputs": {
+              "version": "25.12.0",
+              "build_type": "rootfs (容器/LXC)",
+              "firmware_size": "2048",
+              "lan_ip": "192.168.1.1",
+              "enable_pppoe": "false",
+              "auto_release": "$AUTO_RELEASE"
+            }
+          }
+          EOF
+          )" "ImmortalWrt 25.12.0 rootfs"
+
+          # ========== OpenWrt R619AC (竞斗云 2.0) ==========
+          trigger_workflow "build-openwrt-r619ac.yml" "$(cat <<EOF
+          {
+            "ref": "$REF",
+            "inputs": {
+              "luci_version": "24.10.7",
+              "lan_ip": "192.168.1.1",
+              "enable_store": "true",
+              "enable_docker": "false",
+              "enable_pppoe": "false"
+            }
+          }
+          EOF
+          )" "OpenWrt R619AC 24.10.7"
+
+          echo "✅ 所有构建工作流已触发"

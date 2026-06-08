@@ -1,0 +1,583 @@
+name: 构建 OpenWrt x86_64
+
+on:
+  workflow_dispatch:
+    inputs:
+      build_type:
+        description: '固件构建类型'
+        required: true
+        default: 'squashfs_ext4 (物理机/通用)'
+        type: choice
+        options:
+          - 'squashfs_ext4 (物理机/通用)'
+          - 'rootfs (容器/LXC)'
+      luci_version:
+        description: 'OpenWrt 版本'
+        required: true
+        default: '24.10.7'
+        type: choice
+        options:
+          - '24.10.7'
+          - '24.10.6'
+          - 'SNAPSHOT'
+      auto_release:
+        description: '构建成功后是否自动发布到GitHub Release'
+        required: false
+        type: boolean
+        default: false
+      firmware_size:
+        description: '固件大小 (MB) [若选 Rootfs 则此项无效]'
+        required: true
+        default: '1024'
+        type: choice
+        options:
+          - '1024'
+          - '2048'
+          - '4096'
+          - 'custom'
+      custom_firmware_size:
+        description: '自定义固件大小 (MB) [当上面的固件大小选择 custom 时生效]'
+        required: false
+        default: '5120'
+      lan_ip:
+        description: '路由器管理地址 (LAN IP)'
+        required: true
+        default: '192.168.1.1'
+      enable_store:
+        description: '启用应用商店 (iStore)'
+        required: false
+        type: boolean
+        default: false
+      enable_docker:
+        description: '启用 Docker'
+        required: false
+        type: boolean
+        default: false
+      enable_pppoe:
+        description: '启用 PPPoE 拨号配置'
+        required: false
+        type: boolean
+        default: false
+      pppoe_user:
+        description: 'PPPoE 用户名'
+        required: false
+      pppoe_pass:
+        description: 'PPPoE 密码'
+        required: false
+      enable_argon_theme:
+        description: '启用 Argon 主题 (luci-theme-argon)'
+        required: false
+        type: boolean
+        default: false
+      enable_openclash:
+        description: '启用 OpenClash (luci-app-openclash) [rootfs 不支持，勾选无效]'
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 初始化构建环境
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y \
+            build-essential libncurses-dev zlib1g-dev gawk git gettext \
+            libssl-dev xsltproc rsync wget unzip python3 python3-setuptools \
+            python3-pyelftools zstd genisoimage xorriso mtools
+
+      - name: 获取 OpenWrt 版本
+        id: get_version
+        run: |
+          VERSION="${{ github.event.inputs.luci_version }}"
+          echo "VERSION=$VERSION" >> $GITHUB_ENV
+
+      - name: 缓存 OpenWrt Image Builder
+        id: cache-ib
+        uses: actions/cache@v4
+        with:
+          path: openwrt-ib
+          key: openwrt-ib-${{ env.VERSION }}-${{ runner.os }}
+          restore-keys: |
+            openwrt-ib-${{ env.VERSION }}-
+
+      - name: 下载并解压 Image Builder（缓存未命中时）
+        if: steps.cache-ib.outputs.cache-hit != 'true'
+        run: |
+          if [ "$VERSION" == "SNAPSHOT" ]; then
+             FILE_EXT="tar.zst"
+             IB_URL="https://downloads.openwrt.org/snapshots/targets/x86/64/openwrt-imagebuilder-x86-64.Linux-x86_64.${FILE_EXT}"
+          else
+             if [[ "$VERSION" == "24.10."* ]]; then
+                FILE_EXT="tar.zst"
+             else
+                FILE_EXT="tar.xz"
+             fi
+             IB_URL="https://downloads.openwrt.org/releases/${VERSION}/targets/x86/64/openwrt-imagebuilder-${VERSION}-x86-64.Linux-x86_64.${FILE_EXT}"
+          fi
+          
+          echo "正在下载 Image Builder..."
+          echo "版本: $VERSION"
+          echo "下载地址: $IB_URL"
+          
+          if ! wget -qO openwrt-ib.${FILE_EXT} "$IB_URL"; then
+             echo "Error: 下载失败！请检查版本号 $VERSION 是否存在。"
+             exit 1
+          fi
+          
+          echo "正在解压..."
+          mkdir -p openwrt-ib
+          if [[ "$FILE_EXT" == "tar.zst" ]]; then
+            tar -I zstd -xf openwrt-ib.${FILE_EXT} -C openwrt-ib --strip-components=1
+          else
+            tar -xf openwrt-ib.${FILE_EXT} -C openwrt-ib --strip-components=1
+          fi
+
+      - name: 下载第三方 ipk 包
+        env:
+          ENABLE_ARGON_THEME: ${{ github.event.inputs.enable_argon_theme }}
+          ENABLE_OPENCLASH: ${{ github.event.inputs.enable_openclash }}
+          BUILD_TYPE: ${{ github.event.inputs.build_type }}
+          VERSION: ${{ env.VERSION }}
+        run: |
+          echo "========================================="
+          echo "🚀 开始下载第三方 ipk 包"
+          echo "========================================="
+          
+          mkdir -p third_party_packages
+          
+          PACKAGE_NAMES=""
+          
+          if [ "${ENABLE_ARGON_THEME}" = "true" ]; then
+             echo ""
+             echo "➡️ 处理: luci-theme-argon"
+             REPO="jerrykuku/luci-theme-argon"
+             
+             echo "   正在查找包含 ipk 文件的 Release..."
+             FOUND_IPK=false
+             
+             for page in 1 2 3; do
+                API_URL="https://api.github.com/repos/${REPO}/releases?per_page=10&page=${page}"
+                
+                if ! wget -qO /tmp/api_argon_page${page}.json "$API_URL"; then
+                   echo "   ⚠️ 警告：无法获取 Release 列表 (page $page),跳过"
+                   continue
+                fi
+                
+                RELEASE_COUNT=$(grep -c '"tag_name"' /tmp/api_argon_page${page}.json || echo "0")
+                if [ "$RELEASE_COUNT" -eq 0 ]; then
+                   echo "   已检查完所有 Release"
+                   break
+                fi
+                
+                DOWNLOAD_URLS=$(grep -o '"browser_download_url": *"[^"]*\.ipk"' /tmp/api_argon_page${page}.json | cut -d'"' -f4)
+                
+                if [ -n "$DOWNLOAD_URLS" ]; then
+                   echo "   ✅ 在 Release 中找到 ipk 文件"
+                   FOUND_IPK=true
+                   
+                   echo "$DOWNLOAD_URLS" | while read -r url; do
+                      echo "   ⬇️ 下载: $(basename "$url")"
+                      wget -qO "third_party_packages/$(basename "$url")" "$url" || echo "   ⚠️ 下载失败: $url"
+                   done
+                   
+                   PACKAGE_NAMES="$PACKAGE_NAMES luci-theme-argon"
+                   break
+                fi
+                
+                echo "   第 $page 页未找到 ipk 文件,继续查找..."
+             done
+             
+             if [ "$FOUND_IPK" = false ]; then
+                echo "   ⚠️ 警告：在所有 Release 中都未找到 ipk 文件,跳过"
+             fi
+             
+             # 下载语言包
+             LANG_PATTERN="luci-i18n-theme-argon-zh-cn"
+             echo ""
+             echo "🔍 查找语言包: $LANG_PATTERN"
+             
+             if [[ "$VERSION" == "SNAPSHOT" ]]; then
+                BASE_URL="https://downloads.openwrt.org/snapshots/packages/x86_64/luci"
+             else
+                BASE_URL="https://downloads.openwrt.org/releases/$VERSION/packages/x86_64/luci"
+             fi
+             
+             if wget -qO "third_party_packages/Packages.gz" "$BASE_URL/Packages.gz" 2>/dev/null; then
+                LANG_IPK=$(zgrep -o "Filename:.*${LANG_PATTERN}.*ipk" "third_party_packages/Packages.gz" | head -1 | cut -d' ' -f2)
+                
+                if [ -n "$LANG_IPK" ]; then
+                   echo "⬇️ 下载语言包: $(basename "$LANG_IPK")"
+                   if wget -qO "third_party_packages/$(basename "$LANG_IPK")" "$BASE_URL/$LANG_IPK"; then
+                      echo "✅ 语言包下载成功"
+                   fi
+                else
+                   echo "⚠️ 未找到语言包: $LANG_PATTERN"
+                fi
+                rm -f third_party_packages/Packages.gz
+             fi
+          fi
+          
+          # OpenClash
+          if [ "${ENABLE_OPENCLASH}" = "true" ]; then
+             if [[ "${BUILD_TYPE}" == *"rootfs"* ]]; then
+                echo "⏭️ 跳过: OpenClash 不兼容 rootfs 构建类型，已忽略"
+             else
+                echo ""
+                echo "➡️ 处理: luci-app-openclash"
+                REPO="vernesong/OpenClash"
+                
+                echo "   正在查找包含 ipk 文件的 Release..."
+                FOUND_IPK=false
+                
+                for page in 1 2 3; do
+                   API_URL="https://api.github.com/repos/${REPO}/releases?per_page=10&page=${page}"
+                   
+                   if ! wget -qO /tmp/api_openclash_page${page}.json "$API_URL"; then
+                      echo "   ⚠️ 警告：无法获取 Release 列表 (page $page),跳过"
+                      continue
+                   fi
+                   
+                   RELEASE_COUNT=$(grep -c '"tag_name"' /tmp/api_openclash_page${page}.json || echo "0")
+                   if [ "$RELEASE_COUNT" -eq 0 ]; then
+                      echo "   已检查完所有 Release"
+                      break
+                   fi
+                   
+                   DOWNLOAD_URLS=$(grep -o '"browser_download_url": *"[^"]*\.ipk"' /tmp/api_openclash_page${page}.json | cut -d'"' -f4)
+                   
+                   if [ -n "$DOWNLOAD_URLS" ]; then
+                      echo "   ✅ 在 Release 中找到 ipk 文件"
+                      FOUND_IPK=true
+                      
+                      echo "$DOWNLOAD_URLS" | while read -r url; do
+                         echo "   ⬇️ 下载: $(basename "$url")"
+                         wget -qO "third_party_packages/$(basename "$url")" "$url" || echo "   ⚠️ 下载失败: $url"
+                      done
+                      
+                      PACKAGE_NAMES="$PACKAGE_NAMES luci-app-openclash"
+                      break
+                   fi
+                   
+                   echo "   第 $page 页未找到 ipk 文件,继续查找..."
+                done
+                
+                if [ "$FOUND_IPK" = false ]; then
+                   echo "   ⚠️ 警告：在所有 Release 中都未找到 ipk 文件,跳过"
+                else
+                   # 添加 OpenClash 运行时依赖（需要先移除默认的 dnsmasq 以解决与 dnsmasq-full 的冲突）
+                   echo "   📦 添加运行时依赖..."
+                   OPENCLASH_DEPS="-dnsmasq dnsmasq-full iptables ca-bundle ipset ip-full iptables-mod-tproxy iptables-mod-extra ruby ruby-yaml kmod-tun kmod-inet-diag luci-compat kmod-nft-tproxy"
+                   PACKAGE_NAMES="$PACKAGE_NAMES $OPENCLASH_DEPS"
+                   echo "   依赖: $OPENCLASH_DEPS"
+                   
+                   # 下载中文语言包
+                   LANG_PATTERN="luci-i18n-openclash-zh-cn"
+                   echo ""
+                   echo "   🔍 查找语言包: $LANG_PATTERN"
+                   
+                   if [[ "$VERSION" == "SNAPSHOT" ]]; then
+                      BASE_URL="https://downloads.openwrt.org/snapshots/packages/x86_64/luci"
+                   else
+                      BASE_URL="https://downloads.openwrt.org/releases/$VERSION/packages/x86_64/luci"
+                   fi
+                   
+                   if wget -qO "third_party_packages/Packages.gz" "$BASE_URL/Packages.gz" 2>/dev/null; then
+                      LANG_IPK=$(zgrep -o "Filename:.*${LANG_PATTERN}.*ipk" "third_party_packages/Packages.gz" | head -1 | cut -d' ' -f2)
+                      
+                      if [ -n "$LANG_IPK" ]; then
+                         echo "   ⬇️ 下载语言包: $(basename "$LANG_IPK")"
+                         if wget -qO "third_party_packages/$(basename "$LANG_IPK")" "$BASE_URL/$LANG_IPK"; then
+                            echo "   ✅ 语言包下载成功"
+                            PACKAGE_NAMES="$PACKAGE_NAMES $LANG_PATTERN"
+                         fi
+                      else
+                         echo "   ⚠️ 未找到语言包: $LANG_PATTERN"
+                      fi
+                      rm -f third_party_packages/Packages.gz
+                   fi
+                   
+                   # 下载 Clash 内核（mihomo）
+                   echo ""
+                   echo "   🔧 下载 Clash 内核..."
+                   KERNEL_REPO="MetaCubeX/mihomo"
+                   KERNEL_API="https://api.github.com/repos/${KERNEL_REPO}/releases/latest"
+                   
+                   KERNEL_JSON=$(curl -sL --retry 3 --retry-delay 5 \
+                      -H "Accept: application/vnd.github+json" \
+                      "$KERNEL_API" 2>/dev/null || echo "")
+                   
+                   if [ -n "$KERNEL_JSON" ] && ! echo "$KERNEL_JSON" | grep -q '"message"'; then
+                      KERNEL_URL=$(echo "$KERNEL_JSON" | grep -o '"browser_download_url": *"[^"]*linux-amd64-compatible-[^"]*\.gz"' | cut -d'"' -f4)
+                      
+                      if [ -z "$KERNEL_URL" ]; then
+                         KERNEL_URL=$(echo "$KERNEL_JSON" | grep -o '"browser_download_url": *"[^"]*linux-amd64-v1-v[^"]*\.gz"' | cut -d'"' -f4 | head -1)
+                      fi
+                      
+                      if [ -n "$KERNEL_URL" ]; then
+                         KERNEL_FILENAME=$(basename "$KERNEL_URL")
+                         echo "   ⬇️ 下载内核: $KERNEL_FILENAME"
+                         if wget -qO "third_party_packages/$KERNEL_FILENAME" "$KERNEL_URL"; then
+                            echo "   ✅ 内核下载成功"
+                            echo "OPENCLASH_KERNEL=$KERNEL_FILENAME" >> $GITHUB_ENV
+                         else
+                            echo "   ⚠️ 内核下载失败"
+                         fi
+                      else
+                         echo "   ⚠️ 未找到匹配的内核文件"
+                      fi
+                   else
+                      echo "   ⚠️ 无法获取内核 Release 信息"
+                   fi
+                fi
+             fi
+          fi
+          
+          echo ""
+          echo "========================================="
+          echo "✅ 第三方 ipk 下载完成"
+          IPK_COUNT=$(ls third_party_packages/*.ipk 2>/dev/null | wc -l)
+          echo "   下载 $IPK_COUNT 个 ipk 包"
+          if [ -n "$PACKAGE_NAMES" ]; then
+             echo "   包列表:$PACKAGE_NAMES"
+          fi
+          echo "========================================="
+          
+          if [ "$IPK_COUNT" -gt 0 ]; then
+             echo ""
+             echo "📁 已下载的 ipk 文件:"
+             ls -lh third_party_packages/*.ipk | awk '{print "   " $NF " (" $5 ")"}'
+          fi
+          
+          echo "THIRD_PARTY_PACKAGES=$PACKAGE_NAMES" >> $GITHUB_ENV
+
+      - name: 配置构建参数
+        working-directory: ./openwrt-ib
+        env:
+          LAN_IP: ${{ github.event.inputs.lan_ip }}
+          FIRMWARE_SIZE: ${{ github.event.inputs.firmware_size }}
+          CUSTOM_FIRMWARE_SIZE: ${{ github.event.inputs.custom_firmware_size }}
+          ENABLE_STORE: ${{ github.event.inputs.enable_store }}
+          ENABLE_DOCKER: ${{ github.event.inputs.enable_docker }}
+          BUILD_TYPE: ${{ github.event.inputs.build_type }}
+          ENABLE_PPPOE: ${{ github.event.inputs.enable_pppoe }}
+          PPPOE_USER: ${{ github.event.inputs.pppoe_user }}
+          PPPOE_PASS: ${{ github.event.inputs.pppoe_pass }}
+        run: |
+          # 【关键修改】rootfs 模式下跳过固件大小处理
+          if [[ "${BUILD_TYPE}" == *"rootfs"* ]]; then
+             echo "检测到 rootfs 构建类型，忽略用户选择的固件大小（rootfs 大小由 Image Builder 默认决定）。"
+             echo "FIRMWARE_SIZE=N/A" >> $GITHUB_ENV
+          else
+             # 非 rootfs 模式：处理固件大小
+             if [ "${FIRMWARE_SIZE}" == "custom" ]; then
+                if ! [[ "${CUSTOM_FIRMWARE_SIZE}" =~ ^[0-9]+$ ]]; then
+                   echo "❌ 错误：自定义固件大小必须为数字（MB），当前值：${CUSTOM_FIRMWARE_SIZE}"
+                   exit 1
+                fi
+                echo "Using custom firmware size: ${CUSTOM_FIRMWARE_SIZE}"
+                export FIRMWARE_SIZE="${CUSTOM_FIRMWARE_SIZE}"
+             fi
+             echo "FIRMWARE_SIZE=$FIRMWARE_SIZE" >> $GITHUB_ENV
+          fi
+          
+          mkdir -p files/etc/uci-defaults
+          mkdir -p keys
+          touch custom_packages.txt
+
+          # 集成第三方 ipk 包
+          if [ -d ../third_party_packages ] && ls ../third_party_packages/*.ipk 1> /dev/null 2>&1; then
+             echo "📦 集成第三方 ipk 包..."
+             mkdir -p packages
+             cp ../third_party_packages/*.ipk packages/
+             
+             THIRD_PARTY_COUNT=$(ls packages/*.ipk 2>/dev/null | wc -l)
+             echo "✅ 找到 $THIRD_PARTY_COUNT 个第三方 ipk 包"
+             
+             # 为第三方包生成 Packages 索引（opkg 需要）
+             echo "🔧 生成 Packages 索引..."
+             (cd packages && ../scripts/gen_packages.sh . > Packages 2>/dev/null || {
+               # 如果 gen_packages.sh 不存在，手动生成简易索引
+               for ipk in *.ipk; do
+                 pkg_name=$(echo "$ipk" | sed 's/_.*//')
+                 echo "Package: $pkg_name"
+                 echo "Filename: $ipk"
+                 echo ""
+               done > Packages
+             })
+             gzip -c packages/Packages > packages/Packages.gz 2>/dev/null || true
+             
+             # 添加第三方软件源
+             echo "src custom file://$(pwd)/packages" >> repositories.conf
+             
+             # 添加第三方包到自定义列表
+             if [ -n "${{ env.THIRD_PARTY_PACKAGES }}" ]; then
+                echo "${{ env.THIRD_PARTY_PACKAGES }}" >> custom_packages.txt
+                echo "✅ 已添加第三方包: ${{ env.THIRD_PARTY_PACKAGES }}"
+             fi
+          else
+             echo "⚠️ 未找到第三方 ipk 包，跳过集成"
+          fi
+
+          if ls ../scripts/*.sh 1> /dev/null 2>&1; then
+             chmod +x ../scripts/*.sh
+             [ -f ../scripts/set_ip.sh ] && ../scripts/set_ip.sh
+             
+             if [[ "${BUILD_TYPE}" != *"rootfs"* ]] && [ -f ../scripts/set_partition.sh ]; then
+                 ../scripts/set_partition.sh
+             fi
+
+             [ -f ../scripts/add_docker.sh ] && ../scripts/add_docker.sh
+             [ -f ../scripts/set_pppoe.sh ] && ../scripts/set_pppoe.sh
+          else
+             echo "⚠️ 警告：未找到 ../scripts/ 目录或任何 .sh 脚本，跳过自定义配置（IP/Docker/PPPoE 等）"
+          fi
+          
+          # 部署 OpenClash 内核
+          if [ -n "${{ env.OPENCLASH_KERNEL }}" ] && [ -f "../third_party_packages/${{ env.OPENCLASH_KERNEL }}" ]; then
+             echo "🔧 部署 OpenClash 内核..."
+             mkdir -p files/etc/openclash/core
+             KERNEL_GZ="../third_party_packages/${{ env.OPENCLASH_KERNEL }}"
+             echo "   解压内核: ${{ env.OPENCLASH_KERNEL }}"
+             gunzip -c "$KERNEL_GZ" > files/etc/openclash/core/clash_meta
+             chmod +x files/etc/openclash/core/clash_meta
+             echo "✅ 内核部署完成"
+          fi
+          
+          if [ "${ENABLE_STORE}" == "true" ]; then
+             echo "正在下载 iStore 离线包..."
+             mkdir -p packages
+             wget -r -np -nd -A "luci-app-store*.ipk,luci-lib-taskd*.ipk,taskd*.ipk,luci-lib-xterm*.ipk,Packages,Packages.gz,Packages.sig" -P packages https://istore.linkease.com/repo/all/store/ || true
+             
+             IPK_COUNT=$(ls packages/*.ipk 2>/dev/null | wc -l)
+             if [ "$IPK_COUNT" -eq 0 ]; then
+                echo "❌ 错误：启用 iStore 但下载离线包失败，无法继续构建。"
+                echo "请检查网络或 istore.linkease.com 是否可访问。"
+                exit 1
+             else
+                echo "✅ 成功下载 $IPK_COUNT 个 iStore 相关 ipk 包"
+                echo "luci-app-store taskd luci-lib-taskd luci-lib-xterm" >> custom_packages.txt
+                echo "src custom file://$(pwd)/packages" >> repositories.conf
+             fi
+          fi
+
+          BASE_PACKAGES="-dnsmasq dnsmasq-full luci luci-base luci-ssl uhttpd uhttpd-mod-ubus \
+          luci-i18n-base-zh-cn luci-i18n-firewall-zh-cn \
+          luci-app-ttyd luci-i18n-ttyd-zh-cn \
+          openssh-sftp-server \
+          bash curl wget-ssl tar unzip bind-dig \
+          kmod-usb-storage kmod-usb-storage-uas kmod-fs-ext4 kmod-fs-vfat kmod-fs-exfat \
+          block-mount fdisk e2fsprogs lsblk parted"
+
+          if [[ "$VERSION" == "24.10."* ]] || [[ "$VERSION" == "SNAPSHOT" ]]; then
+              BASE_PACKAGES="$BASE_PACKAGES luci-i18n-package-manager-zh-cn"
+          fi
+          
+          [ -f .config ] || touch .config
+          
+          if [ -f ../config/base.config ]; then
+             cat ../config/base.config >> .config
+          else
+             echo "提示: 未找到 ../config/base.config，跳过追加。"
+          fi
+          
+          CUSTOM_PACKAGES=$(cat custom_packages.txt | tr '\n' ' ')
+          
+          echo "PACKAGES=$BASE_PACKAGES $CUSTOM_PACKAGES" >> $GITHUB_ENV
+
+      - name: 生成固件（详细日志）
+        working-directory: ./openwrt-ib
+        run: |
+          echo "=== 开始构建固件 ==="
+          echo "PACKAGES: $PACKAGES"
+          echo ""
+          echo "=== .config 内容 ==="
+          cat .config || true
+          echo ""
+          echo "=== 开始执行 make image ==="
+          make image PACKAGES="$PACKAGES" FILES="files" V=s 2>&1 | tee /tmp/build.log
+          BUILD_STATUS=${PIPESTATUS[0]}
+          if [ $BUILD_STATUS -ne 0 ]; then
+            echo "=== 构建失败，显示最后 100 行日志 ==="
+            tail -n 100 /tmp/build.log
+            exit $BUILD_STATUS
+          fi
+
+      - name: 上传构建日志
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-log
+          path: /tmp/build.log
+          retention-days: 7
+
+      - name: 整理构建产物
+        env:
+          BUILD_TYPE: ${{ github.event.inputs.build_type }}
+        run: |
+          mkdir -p firmware
+          
+          echo "=== 诊断信息 ==="
+          echo "选择的构建类型: ${BUILD_TYPE}"
+          
+          echo "=== Image Builder 输出的构建结果 ==="
+          ls -lh openwrt-ib/bin/targets/x86/64/ || true
+          echo "==================================="
+          
+          if [[ "${BUILD_TYPE}" == *"squashfs_ext4"* ]]; then
+             echo "➡️ 常规模式，保留 .img.* 固件文件..."
+             find openwrt-ib/bin/targets/x86/64 -name "*.img.*" ! -name "*rootfs*" -exec cp {} firmware/ \;
+          elif [[ "${BUILD_TYPE}" == *"rootfs"* ]]; then
+             echo "➡️ Rootfs 模式，保留 rootfs 文件..."
+             find openwrt-ib/bin/targets/x86/64 -name "*rootfs.tar.gz" -exec cp {} firmware/ \;
+          else
+             echo "⚠️ 未知的构建类型！将复制所有镜像文件..."
+             find openwrt-ib/bin/targets/x86/64 -name "*.img.*" -exec cp {} firmware/ \;
+          fi
+          
+          echo "➡️ 提取附加信息文件..."
+          cp openwrt-ib/bin/targets/x86/64/sha256sums firmware/ 2>/dev/null || true
+          cp openwrt-ib/bin/targets/x86/64/profiles.json firmware/ 2>/dev/null || true
+          
+          cd firmware
+          echo "=== 准备打包的文件 ==="
+          ls -lh
+          
+          if [ -z "$(ls -A .)" ]; then
+              echo "Error: 在 firmware 目录中没有找到任何文件！请检查上面 if 匹配逻辑。"
+              exit 1
+          fi
+          
+          VERSION="${{ github.event.inputs.luci_version }}"
+          zip -r "OpenWrt_x86_64_${VERSION}.zip" ./*
+
+      - name: 上传固件 Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: OpenWrt_x86_64_Firmware
+          path: firmware/
+
+      - name: 发布到 GitHub Release
+        uses: softprops/action-gh-release@v2
+        if: github.event.inputs.auto_release == 'true'
+        with:
+          tag_name: v${{ env.VERSION }}-${{ github.run_id }}
+          name: OpenWrt ${{ env.VERSION }} x86_64
+          body: |
+            OpenWrt x86_64 固件
+            版本: ${{ env.VERSION }}
+            类型: ${{ github.event.inputs.build_type }}
+            管理地址: ${{ github.event.inputs.lan_ip }}
+            用户名: root
+            密码: (无)
+            固件大小: ${{ env.FIRMWARE_SIZE }}MB
+          files: firmware/*
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

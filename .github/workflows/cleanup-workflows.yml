@@ -1,0 +1,45 @@
+name: 清理所有工作流记录（跳过自身运行）
+
+on:
+  workflow_dispatch:
+
+permissions:
+  actions: write
+
+jobs:
+  cleanup:
+    name: 清理所有工作流记录
+    runs-on: ubuntu-latest
+    steps:
+      - name: 清理所有工作流运行记录
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          REPO="${{ github.repository }}"
+          CURRENT_RUN="${{ github.run_id }}"
+
+          echo "=== 清理配置 ==="
+          echo "仓库: $REPO"
+          echo "当前运行: #$CURRENT_RUN（跳过自身不删）"
+          echo ""
+
+          TOTAL_DELETED=0
+
+          gh api "/repos/$REPO/actions/workflows" --jq '.workflows[] | "\(.id):\(.name)"' | while IFS=: read -r workflow_id workflow_name; do
+             echo "📋 处理工作流: $workflow_name (ID: $workflow_id)"
+
+             gh api --paginate "/repos/$REPO/actions/workflows/$workflow_id/runs?per_page=100" --jq '.workflow_runs[] | "\(.id)|\(.created_at)|\(.head_branch)|\(.display_title)"' | while IFS='|' read -r run_id created_at branch title; do
+                # 跳过当前正在运行的自身
+                if [ "$run_id" = "$CURRENT_RUN" ]; then
+                   echo "   ⏭️  跳过自身 #$run_id"
+                   continue
+                fi
+
+                echo "   🗑️  删除 #$run_id [$branch] $title (创建于 $created_at)"
+                gh api -X DELETE "/repos/$REPO/actions/runs/$run_id" --silent
+                TOTAL_DELETED=$((TOTAL_DELETED + 1))
+             done
+          done
+
+          echo ""
+          echo "✅ 清理完成，共删除 $TOTAL_DELETED 条记录"
