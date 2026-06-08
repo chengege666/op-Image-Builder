@@ -36,7 +36,9 @@ jobs:
                 fi
 
                 echo "   🗑️  删除 #$run_id [$branch] $title (创建于 $created_at)"
-                gh api -X DELETE "/repos/$REPO/actions/runs/$run_id" --silent
+                if ! gh api -X DELETE "/repos/$REPO/actions/runs/$run_id" --silent 2>/dev/null; then
+                   echo "   ⚠️  跳过（正在运行或无权限）"
+                fi
                 TOTAL_DELETED=$((TOTAL_DELETED + 1))
              done
           done
