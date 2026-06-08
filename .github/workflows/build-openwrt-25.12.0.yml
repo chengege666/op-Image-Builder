@@ -121,7 +121,7 @@ jobs:
              [ -f ../scripts/set_ip.sh ] && ../scripts/set_ip.sh
              
              # 如果不是纯 rootfs 模式，则设置分区大小
-             if [[ "${BUILD_TYPE}" != "rootfs" ]] && [ -f ../scripts/set_partition.sh ]; then
+             if [[ "${BUILD_TYPE}" != *"rootfs"* ]] && [ -f ../scripts/set_partition.sh ]; then
                  ../scripts/set_partition.sh
              fi
              
@@ -215,15 +215,15 @@ jobs:
             管理地址: ${{ github.event.inputs.lan_ip }}
             用户名: root
             密码: (无)
-            固件大小: ${{ github.event.inputs.firmware_size }}MB
+            固件大小: ${{ contains(github.event.inputs.build_type, 'rootfs') && 'N/A (rootfs 由 Image Builder 默认决定)' || format('{0}MB', github.event.inputs.firmware_size) }}
             PPPoE: ${{ github.event.inputs.enable_pppoe == 'true' && '已启用' || '未启用' }}
             
             ---
             📖 固件说明
-            ${{ github.event.inputs.build_type == 'rootfs' && '• rootfs: 容器/LXC 专用固件' || '• EFI 固件（-efi）: 支持 UEFI 启动，适用于现代主板' }}
-            ${{ github.event.inputs.build_type == 'rootfs' && '• 适用于 Docker、LXC 等容器环境' || '• BIOS 固件: 支持 Legacy 启动，适用于老主板' }}
-            ${{ github.event.inputs.build_type == 'rootfs' && '• 不支持直接刷入物理机' || '• squashfs: 只读压缩系统分区' }}
-            ${{ github.event.inputs.build_type == 'rootfs' && '' || '• ext4: 可读写用户分区' }}
+            ${{ contains(github.event.inputs.build_type, 'rootfs') && '• rootfs: 容器/LXC 专用固件' || '• EFI 固件（-efi）: 支持 UEFI 启动，适用于现代主板' }}
+            ${{ contains(github.event.inputs.build_type, 'rootfs') && '• 适用于 Docker、LXC 等容器环境' || '• BIOS 固件: 支持 Legacy 启动，适用于老主板' }}
+            ${{ contains(github.event.inputs.build_type, 'rootfs') && '• 不支持直接刷入物理机' || '• squashfs: 只读压缩系统分区' }}
+            ${{ contains(github.event.inputs.build_type, 'rootfs') && '' || '• ext4: 可读写用户分区' }}
           files: firmware/*
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
