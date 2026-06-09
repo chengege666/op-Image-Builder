@@ -34,9 +34,9 @@ on:
           - '1024'
           - '2048'
           - '4096'
-          - 'custom'
+          - '自定义'
       custom_firmware_size:
-        description: '自定义固件大小 (MB) [当上面的固件大小选择 custom 时生效]'
+        description: '自定义固件大小 (MB) [当选中"自定义"时生效]'
         required: false
         default: '5120'
       lan_ip:
