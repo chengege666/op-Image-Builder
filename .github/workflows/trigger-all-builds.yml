@@ -1,4 +1,4 @@
-name: 一键触发所有构建（固件）
+name: 一键触发所有构建（固件测试用）
 
 on:
   workflow_dispatch:
