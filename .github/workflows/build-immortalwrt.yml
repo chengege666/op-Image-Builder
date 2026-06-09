@@ -25,11 +25,12 @@ on:
         type: boolean
         default: false
       firmware_size:
-        description: '固件大小 (MB) [若选 Rootfs 则此项无效]'
-        required: true
-        default: '1024'
+        description: '固件大小 (MB) [选"默认"则使用默认分区大小]'
+        required: false
+        default: '默认'
         type: choice
         options:
+          - '默认'
           - '1024'
           - '2048'
           - '4096'
@@ -380,7 +381,10 @@ jobs:
              echo "FIRMWARE_SIZE=N/A" >> $GITHUB_ENV
           else
              # 非 rootfs 模式：正常处理固件大小
-             if [ "${FIRMWARE_SIZE}" == "custom" ]; then
+             if [ "${FIRMWARE_SIZE}" == "默认" ]; then
+                echo "选择默认分区大小，跳过自定义扩容。"
+                export FIRMWARE_SIZE=""
+             elif [ "${FIRMWARE_SIZE}" == "custom" ]; then
                 if ! [[ "${CUSTOM_FIRMWARE_SIZE}" =~ ^[0-9]+$ ]]; then
                    echo "❌ 错误：自定义固件大小必须为数字（MB），当前值：${CUSTOM_FIRMWARE_SIZE}"
                    exit 1

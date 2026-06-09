@@ -25,9 +25,9 @@ on:
         type: boolean
         default: false
       firmware_size:
-        description: '固件大小 (MB) [若选 Rootfs 则此项无效]'
-        required: true
-        default: '2048'
+        description: '固件大小 (MB) [留空则使用默认分区大小]'
+        required: false
+        default: ''
       lan_ip:
         description: '路由器管理地址 (LAN IP)'
         required: true
