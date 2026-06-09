@@ -26,7 +26,7 @@ on:
         type: boolean
         default: false
       firmware_size:
-        description: '固件大小 (MB) [选"默认"则使用默认分区大小]'
+        description: '固件大小 (MB) [选 rootfs 时此项无效] [选"默认"则使用 1024MB]'
         required: false
         default: '默认'
         type: choice
