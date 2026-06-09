@@ -35,6 +35,11 @@ on:
           - '1024'
           - '2048'
           - '4096'
+          - '自定义'
+      custom_firmware_size:
+        description: '自定义固件大小 (MB) [当选中"自定义"时生效]'
+        required: false
+        default: '5120'
       lan_ip:
         description: '路由器管理地址 (LAN IP)'
         required: true
@@ -106,6 +111,7 @@ jobs:
         env:
           LAN_IP: ${{ github.event.inputs.lan_ip }}
           FIRMWARE_SIZE: ${{ github.event.inputs.firmware_size }}
+          CUSTOM_FIRMWARE_SIZE: ${{ github.event.inputs.custom_firmware_size }}
           BUILD_TYPE: ${{ github.event.inputs.build_type }}
           ENABLE_PPPOE: ${{ github.event.inputs.enable_pppoe }}
           PPPOE_USER: ${{ github.event.inputs.pppoe_username }}
@@ -120,6 +126,13 @@ jobs:
              if [ "${FIRMWARE_SIZE}" == "默认" ]; then
                 echo "选择默认分区大小，使用 1024 MB。"
                 export FIRMWARE_SIZE="1024"
+             elif [ "${FIRMWARE_SIZE}" == "自定义" ]; then
+                if ! [[ "${CUSTOM_FIRMWARE_SIZE}" =~ ^[0-9]+$ ]]; then
+                   echo "❌ 错误：自定义固件大小必须为数字（MB），当前值：${CUSTOM_FIRMWARE_SIZE}"
+                   exit 1
+                fi
+                echo "使用自定义固件大小: ${CUSTOM_FIRMWARE_SIZE} MB"
+                export FIRMWARE_SIZE="${CUSTOM_FIRMWARE_SIZE}"
              fi
              echo "FIRMWARE_SIZE=$FIRMWARE_SIZE" >> $GITHUB_ENV
           fi
