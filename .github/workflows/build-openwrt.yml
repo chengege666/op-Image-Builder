@@ -35,9 +35,9 @@ on:
           - '1024'
           - '2048'
           - '4096'
-          - 'custom'
+          - '自定义'
       custom_firmware_size:
-        description: '自定义固件大小 (MB) [当上面的固件大小选择 custom 时生效]'
+        description: '自定义固件大小 (MB) [当选中"自定义"时生效]'
         required: false
         default: '5120'
       lan_ip:
@@ -381,7 +381,7 @@ jobs:
              if [ "${FIRMWARE_SIZE}" == "默认" ]; then
                 echo "选择默认分区大小，使用 1024 MB。"
                 export FIRMWARE_SIZE="1024"
-             elif [ "${FIRMWARE_SIZE}" == "custom" ]; then
+             elif [ "${FIRMWARE_SIZE}" == "自定义" ]; then
                 if ! [[ "${CUSTOM_FIRMWARE_SIZE}" =~ ^[0-9]+$ ]]; then
                    echo "❌ 错误：自定义固件大小必须为数字（MB），当前值：${CUSTOM_FIRMWARE_SIZE}"
                    exit 1
