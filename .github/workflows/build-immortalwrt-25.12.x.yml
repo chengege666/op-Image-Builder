@@ -239,7 +239,7 @@ jobs:
             管理地址: ${{ github.event.inputs.lan_ip }}
             用户名: root
             密码: (无)
-            固件大小: ${{ contains(github.event.inputs.build_type, 'rootfs') && 'N/A' || format('{0}MB', github.event.inputs.firmware_size) }}
+            固件大小: ${{ env.FIRMWARE_SIZE }}MB
             PPPoE: ${{ github.event.inputs.enable_pppoe == 'true' && '已启用' || '未启用' }}
             
             ---
