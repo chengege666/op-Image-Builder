@@ -179,9 +179,9 @@ jobs:
               https://github.com/jerrykuku/luci-theme-argon/releases/download/v2.4.3/luci-theme-argon-2.4.3-r20250722.apk
             echo "✓ argon 主题包已下载到 files/root/"
 
-            # 单独创建安装脚本
+            # 单独创建安装脚本（使用 --force-depends 兼容不同 luci-base 版本）
             printf '%s\n' '#!/bin/sh' \
-              'apk add --allow-untrusted /root/luci-theme-argon.apk 2>/dev/null' \
+              'apk add --allow-untrusted --force-depends /root/luci-theme-argon.apk' \
               'rm -f /root/luci-theme-argon.apk' \
               'exit 0' > files/etc/uci-defaults/98-argon-install
             chmod +x files/etc/uci-defaults/98-argon-install
