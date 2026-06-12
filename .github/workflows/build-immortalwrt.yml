@@ -69,6 +69,11 @@ on:
         required: false
         type: boolean
         default: false
+      enable_aurora:
+        description: 'aurora 主题'
+        required: false
+        type: boolean
+        default: false
       enable_openclash:
         description: '启用 OpenClash (luci-app-openclash) [rootfs 不支持，勾选无效]'
         required: false
@@ -145,6 +150,7 @@ jobs:
       - name: 下载第三方 ipk 包
         env:
           ENABLE_ARGON_THEME: ${{ github.event.inputs.enable_argon_theme }}
+          ENABLE_AURORA: ${{ github.event.inputs.enable_aurora }}
           ENABLE_OPENCLASH: ${{ github.event.inputs.enable_openclash }}
           BUILD_TYPE: ${{ github.event.inputs.build_type }}
           VERSION: ${{ env.VERSION }}
@@ -226,7 +232,17 @@ jobs:
                 rm -f third_party_packages/Packages.gz
              fi
           fi
-          
+
+          # aurora 主题（从 GitHub Release 下载 ipk）
+          if [ "${ENABLE_AURORA}" == "true" ]; then
+            echo ""
+            echo "➡️ 处理: luci-theme-aurora"
+            wget -qO third_party_packages/luci-theme-aurora.ipk \
+              https://github.com/eamonxg/luci-theme-aurora/releases/latest/download/luci-theme-aurora_0.12.0-r20260531_all.ipk
+            echo "   ⬇️ 下载: luci-theme-aurora.ipk"
+            PACKAGE_NAMES="$PACKAGE_NAMES luci-theme-aurora"
+          fi
+
           # OpenClash
           if [ "${ENABLE_OPENCLASH}" = "true" ]; then
              if [[ "${BUILD_TYPE}" == *"rootfs"* ]]; then
@@ -369,6 +385,8 @@ jobs:
           ENABLE_STORE: ${{ github.event.inputs.enable_store }}
           ENABLE_DOCKER: ${{ github.event.inputs.enable_docker }}
           BUILD_TYPE: ${{ github.event.inputs.build_type }}
+          ENABLE_ARGON_THEME: ${{ github.event.inputs.enable_argon_theme }}
+          ENABLE_AURORA: ${{ github.event.inputs.enable_aurora }}
           ENABLE_PPPOE: ${{ github.event.inputs.enable_pppoe }}
           PPPOE_USER: ${{ github.event.inputs.pppoe_user }}
           PPPOE_PASS: ${{ github.event.inputs.pppoe_pass }}
@@ -479,6 +497,26 @@ jobs:
              fi
           fi
 
+          # ---------- 配置 LuCI 主题 ----------
+          if [ "${ENABLE_ARGON_THEME}" == "true" ] || [ "${ENABLE_AURORA}" == "true" ]; then
+            # aurora 是在下载步骤中通过 third_party_packages 集成的，无需额外安装
+            if [ "${ENABLE_ARGON_THEME}" == "true" ]; then
+              printf '%s\n' '#!/bin/sh' \
+                'uci set luci.main.mediaurlbase="/luci-static/argon"' \
+                'uci commit luci' \
+                'exit 0' > files/etc/uci-defaults/99-theme
+              chmod +x files/etc/uci-defaults/99-theme
+              echo "默认主题: argon"
+            elif [ "${ENABLE_AURORA}" == "true" ]; then
+              printf '%s\n' '#!/bin/sh' \
+                'uci set luci.main.mediaurlbase="/luci-static/aurora"' \
+                'uci commit luci' \
+                'exit 0' > files/etc/uci-defaults/99-theme
+              chmod +x files/etc/uci-defaults/99-theme
+              echo "默认主题: aurora"
+            fi
+          fi
+
           # ImmortalWrt 基础包配置
           BASE_PACKAGES="luci luci-base luci-ssl-openssl uhttpd uhttpd-mod-ubus \
           luci-i18n-base-zh-cn luci-i18n-firewall-zh-cn \
@@ -586,6 +624,7 @@ jobs:
             ImmortalWrt x86_64 固件
             版本：${{ env.VERSION }}
             类型：${{ github.event.inputs.build_type }}
+            主题：${{ github.event.inputs.enable_argon_theme == 'true' && 'argon' || '' }}${{ github.event.inputs.enable_aurora == 'true' && ' aurora' || '' }}${{ github.event.inputs.enable_argon_theme != 'true' && github.event.inputs.enable_aurora != 'true' && '' || '' }}
             管理地址：${{ github.event.inputs.lan_ip }}
             用户名：root
             密码：(无)
