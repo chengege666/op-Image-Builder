@@ -176,15 +176,24 @@ jobs:
             echo "✓ argon 主题包已添加"
           fi
 
-          # aurora 主题（第三方，从 GitHub Release 下载本地包）
+          # aurora 主题（第三方，从 GitHub Release 下载，首次启动安装）
           if [ "${ENABLE_AURORA}" == "true" ]; then
             echo "正在下载 Aurora 主题包..."
-            mkdir -p packages
+            mkdir -p files/root
             # ImmortalWrt 25.12.x 使用 apk 包格式
-            wget -qO packages/luci-theme-aurora.apk \
+            wget -qO files/root/luci-theme-aurora.apk \
               https://github.com/eamonxg/luci-theme-aurora/releases/latest/download/luci-theme-aurora-0.12.0-r20260531.apk
-            echo "luci-theme-aurora" >> custom_packages.txt
-            echo "✓ aurora 主题包已添加（packages/ 目录）"
+            echo "✓ aurora 主题包已下载到 files/root/"
+
+            # 单独创建安装脚本，不依赖默认主题设置
+            cat > files/etc/uci-defaults/98-aurora-install << 'EOF'
+#!/bin/sh
+apk add --allow-untrusted /root/luci-theme-aurora.apk 2>/dev/null
+rm -f /root/luci-theme-aurora.apk
+exit 0
+EOF
+            chmod +x files/etc/uci-defaults/98-aurora-install
+            echo "✓ aurora 安装脚本已创建"
           fi
 
           # ---------- 设置默认主题 ----------
@@ -200,7 +209,7 @@ EOF
             chmod +x files/etc/uci-defaults/99-theme
             echo "默认主题: argon"
           elif [ "${ENABLE_AURORA}" == "true" ]; then
-            # 只选 aurora 时，设 aurora 为默认
+            # 只选 aurora 时，设 aurora 为默认（aurora 包已在 98-aurora-install 中安装）
             cat > files/etc/uci-defaults/99-theme << 'EOF'
 #!/bin/sh
 uci set luci.main.mediaurlbase="/luci-static/aurora"
