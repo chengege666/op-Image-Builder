@@ -170,32 +170,26 @@ jobs:
           echo "argon 主题: ${ENABLE_ARGON}"
           echo "aurora 主题: ${ENABLE_AURORA}"
 
-          # ---------- 下载主题包 ----------
-          # OpenWrt 25.12.x 使用 apk 包管理器，主题包从 GitHub Release 下载
-          # argon 主题（jerrykuku/luci-theme-argon）
+          # ---------- 安装主题包 ----------
+          # argon 主题（从官方源安装，依赖自动处理）
           if [ "${ENABLE_ARGON}" == "true" ]; then
-            echo "正在下载 Argon 主题包..."
-            mkdir -p files/root
-            wget -qO files/root/luci-theme-argon.apk \
-              https://github.com/jerrykuku/luci-theme-argon/releases/download/v2.4.3/luci-theme-argon-2.4.3-r20250722.apk
-            echo "✓ argon 主题包已下载到 files/root/"
+            echo "luci-theme-argon" >> custom_packages.txt
+            echo "✓ argon 主题包已添加"
           fi
 
-          # aurora 主题（eamonxg/luci-theme-aurora）
+          # aurora 主题（第三方，从 GitHub Release 下载，首次启动安装）
+          # 注意：OpenWrt 使用 opkg，需要下载 ipk 包
           if [ "${ENABLE_AURORA}" == "true" ]; then
             echo "正在下载 Aurora 主题包..."
             mkdir -p files/root
-            wget -qO files/root/luci-theme-aurora.apk \
-              https://github.com/eamonxg/luci-theme-aurora/releases/latest/download/luci-theme-aurora-0.12.0-r20260531.apk
+            wget -qO files/root/luci-theme-aurora.ipk \
+              https://github.com/eamonxg/luci-theme-aurora/releases/latest/download/luci-theme-aurora_0.12.0-r20260531_all.ipk
             echo "✓ aurora 主题包已下载到 files/root/"
-          fi
 
-          # ---------- 创建安装脚本（独立于默认主题）----------
-          # aurora 安装脚本（即使同时选了 argon 也要安装）
-          if [ "${ENABLE_AURORA}" == "true" ]; then
+            # 单独创建安装脚本，不依赖默认主题设置
             printf '%s\n' '#!/bin/sh' \
-              'apk add --allow-untrusted /root/luci-theme-aurora.apk 2>/dev/null' \
-              'rm -f /root/luci-theme-aurora.apk' \
+              'opkg install /root/luci-theme-aurora.ipk 2>/dev/null' \
+              'rm -f /root/luci-theme-aurora.ipk' \
               'exit 0' > files/etc/uci-defaults/98-aurora-install
             chmod +x files/etc/uci-defaults/98-aurora-install
             echo "✓ aurora 安装脚本已创建"
@@ -204,10 +198,7 @@ jobs:
           # ---------- 设置默认主题 ----------
           # 优先级：argon（两者都选时）> aurora > bootstrap
           if [ "${ENABLE_ARGON}" == "true" ]; then
-            # argon 安装 + 默认主题
             printf '%s\n' '#!/bin/sh' \
-              'apk add --allow-untrusted /root/luci-theme-argon.apk 2>/dev/null' \
-              'rm -f /root/luci-theme-argon.apk' \
               'uci set luci.main.mediaurlbase="/luci-static/argon"' \
               'uci commit luci' \
               'exit 0' > files/etc/uci-defaults/99-theme
@@ -303,14 +294,15 @@ jobs:
           path: firmware/
 
       - name: 发布到 GitHub Release
+        uses: softprops/action-gh-release@v2
         if: github.event.inputs.auto_release == 'true'
-        run: |
-          set -e
-          TAG="v${{ github.event.inputs.version }}-${{ github.run_id }}"
-          gh release create "$TAG" firmware/* \
-            --repo "${{ github.repository }}" \
-            --title "OpenWrt ${{ github.event.inputs.version }} x86_64" \
-            --notes "OpenWrt x86_64 固件
+        with:
+          tag_name: v${{ github.event.inputs.version }}-${{ github.run_id }}
+          name: OpenWrt ${{ github.event.inputs.version }} x86_64
+          generate_release_notes: false
+          make_latest: false
+          body: |
+            OpenWrt x86_64 固件
             版本: ${{ github.event.inputs.version }}
             类型: ${{ github.event.inputs.build_type }}
             主题: ${{ github.event.inputs.enable_argon == 'true' && 'argon' || '' }}${{ github.event.inputs.enable_aurora == 'true' && ' aurora' || '' }}${{ github.event.inputs.enable_argon != 'true' && github.event.inputs.enable_aurora != 'true' && ' bootstrap' || '' }}
@@ -318,4 +310,13 @@ jobs:
             用户名: root
             密码: (无)
             固件大小: ${{ env.FIRMWARE_SIZE }}MB
-            PPPoE: ${{ github.event.inputs.enable_pppoe == 'true' && '已启用' || '未启用' }}"
+            PPPoE: ${{ github.event.inputs.enable_pppoe == 'true' && '已启用' || '未启用' }}
+            
+            ---
+            📖 固件说明
+            ${{ contains(github.event.inputs.build_type, 'rootfs') && '• rootfs: 容器/LXC 专用固件' || '• EFI 固件（-efi）: 支持 UEFI 启动，适用于现代主板' }}
+            ${{ contains(github.event.inputs.build_type, 'rootfs') && '• 适用于 Docker、LXC 等容器环境' || '• BIOS 固件: 支持 Legacy 启动，适用于老主板' }}
+            ${{ contains(github.event.inputs.build_type, 'rootfs') && '• 不支持直接刷入物理机' || '• squashfs: 只读压缩系统分区' }}
+            ${{ contains(github.event.inputs.build_type, 'rootfs') && '' || '• ext4: 可读写用户分区' }}
+          files: firmware/*
+          fail_on_unmatched_files: true
