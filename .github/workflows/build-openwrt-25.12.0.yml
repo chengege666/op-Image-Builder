@@ -44,11 +44,6 @@ on:
         description: '路由器管理地址 (LAN IP)'
         required: true
         default: '192.168.1.1'
-      enable_argon:
-        description: 'argon 主题'
-        required: false
-        type: boolean
-        default: true
       enable_aurora:
         description: 'aurora 主题'
         required: false
@@ -123,7 +118,6 @@ jobs:
           FIRMWARE_SIZE: ${{ github.event.inputs.firmware_size }}
           CUSTOM_FIRMWARE_SIZE: ${{ github.event.inputs.custom_firmware_size }}
           BUILD_TYPE: ${{ github.event.inputs.build_type }}
-          ENABLE_ARGON: ${{ github.event.inputs.enable_argon }}
           ENABLE_AURORA: ${{ github.event.inputs.enable_aurora }}
           ENABLE_PPPOE: ${{ github.event.inputs.enable_pppoe }}
           PPPOE_USER: ${{ github.event.inputs.pppoe_username }}
@@ -167,27 +161,9 @@ jobs:
           fi
 
           # 配置 LuCI 主题
-          echo "argon 主题: ${ENABLE_ARGON}"
           echo "aurora 主题: ${ENABLE_AURORA}"
 
           # ---------- 安装主题包 ----------
-          # argon 主题（OpenWrt 官方源没有，从 GitHub Release 下载）
-          if [ "${ENABLE_ARGON}" == "true" ]; then
-            echo "正在下载 Argon 主题包..."
-            mkdir -p files/root
-            wget -qO files/root/luci-theme-argon.apk \
-              https://github.com/jerrykuku/luci-theme-argon/releases/download/v2.4.3/luci-theme-argon-2.4.3-r20250722.apk
-            echo "✓ argon 主题包已下载到 files/root/"
-
-            # 单独创建安装脚本（使用 --force-depends 兼容不同 luci-base 版本）
-            printf '%s\n' '#!/bin/sh' \
-              'apk add --allow-untrusted --force-depends /root/luci-theme-argon.apk' \
-              'rm -f /root/luci-theme-argon.apk' \
-              'exit 0' > files/etc/uci-defaults/98-argon-install
-            chmod +x files/etc/uci-defaults/98-argon-install
-            echo "✓ argon 安装脚本已创建"
-          fi
-
           # aurora 主题（第三方，从 GitHub Release 下载）
           if [ "${ENABLE_AURORA}" == "true" ]; then
             echo "正在下载 Aurora 主题包..."
@@ -206,15 +182,8 @@ jobs:
           fi
 
           # ---------- 设置默认主题 ----------
-          # 优先级：argon（两者都选时）> aurora > bootstrap
-          if [ "${ENABLE_ARGON}" == "true" ]; then
-            printf '%s\n' '#!/bin/sh' \
-              'uci set luci.main.mediaurlbase="/luci-static/argon"' \
-              'uci commit luci' \
-              'exit 0' > files/etc/uci-defaults/99-theme
-            chmod +x files/etc/uci-defaults/99-theme
-            echo "默认主题: argon"
-          elif [ "${ENABLE_AURORA}" == "true" ]; then
+          # 优先级：aurora > bootstrap
+          if [ "${ENABLE_AURORA}" == "true" ]; then
             printf '%s\n' '#!/bin/sh' \
               'uci set luci.main.mediaurlbase="/luci-static/aurora"' \
               'uci commit luci' \
@@ -315,7 +284,7 @@ jobs:
             OpenWrt x86_64 固件
             版本: ${{ github.event.inputs.version }}
             类型: ${{ github.event.inputs.build_type }}
-            主题: ${{ github.event.inputs.enable_argon == 'true' && 'argon' || '' }}${{ github.event.inputs.enable_aurora == 'true' && ' aurora' || '' }}${{ github.event.inputs.enable_argon != 'true' && github.event.inputs.enable_aurora != 'true' && ' bootstrap' || '' }}
+            主题: ${{ github.event.inputs.enable_aurora == 'true' && 'aurora' || 'bootstrap' }}
             管理地址: ${{ github.event.inputs.lan_ip }}
             用户名: root
             密码: (无)
