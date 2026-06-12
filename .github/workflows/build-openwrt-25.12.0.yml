@@ -303,15 +303,14 @@ jobs:
           path: firmware/
 
       - name: 发布到 GitHub Release
-        uses: softprops/action-gh-release@v2
         if: github.event.inputs.auto_release == 'true'
-        with:
-          tag_name: v${{ github.event.inputs.version }}-${{ github.run_id }}
-          name: OpenWrt ${{ github.event.inputs.version }} x86_64
-          generate_release_notes: false
-          make_latest: false
-          body: |
-            OpenWrt x86_64 固件
+        run: |
+          set -e
+          TAG="v${{ github.event.inputs.version }}-${{ github.run_id }}"
+          gh release create "$TAG" firmware/* \
+            --repo "${{ github.repository }}" \
+            --title "OpenWrt ${{ github.event.inputs.version }} x86_64" \
+            --notes "OpenWrt x86_64 固件
             版本: ${{ github.event.inputs.version }}
             类型: ${{ github.event.inputs.build_type }}
             主题: ${{ github.event.inputs.enable_argon == 'true' && 'argon' || '' }}${{ github.event.inputs.enable_aurora == 'true' && ' aurora' || '' }}${{ github.event.inputs.enable_argon != 'true' && github.event.inputs.enable_aurora != 'true' && ' bootstrap' || '' }}
@@ -319,13 +318,4 @@ jobs:
             用户名: root
             密码: (无)
             固件大小: ${{ env.FIRMWARE_SIZE }}MB
-            PPPoE: ${{ github.event.inputs.enable_pppoe == 'true' && '已启用' || '未启用' }}
-            
-            ---
-            📖 固件说明
-            ${{ contains(github.event.inputs.build_type, 'rootfs') && '• rootfs: 容器/LXC 专用固件' || '• EFI 固件（-efi）: 支持 UEFI 启动，适用于现代主板' }}
-            ${{ contains(github.event.inputs.build_type, 'rootfs') && '• 适用于 Docker、LXC 等容器环境' || '• BIOS 固件: 支持 Legacy 启动，适用于老主板' }}
-            ${{ contains(github.event.inputs.build_type, 'rootfs') && '• 不支持直接刷入物理机' || '• squashfs: 只读压缩系统分区' }}
-            ${{ contains(github.event.inputs.build_type, 'rootfs') && '' || '• ext4: 可读写用户分区' }}
-          files: firmware/*
-          fail_on_unmatched_files: true
+            PPPoE: ${{ github.event.inputs.enable_pppoe == 'true' && '已启用' || '未启用' }}"
