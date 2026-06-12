@@ -186,12 +186,10 @@ jobs:
             echo "✓ aurora 主题包已下载到 files/root/"
 
             # 单独创建安装脚本，不依赖默认主题设置
-            cat > files/etc/uci-defaults/98-aurora-install << 'EOF'
-#!/bin/sh
-apk add --allow-untrusted /root/luci-theme-aurora.apk 2>/dev/null
-rm -f /root/luci-theme-aurora.apk
-exit 0
-EOF
+            printf '%s\n' '#!/bin/sh' \
+              'apk add --allow-untrusted /root/luci-theme-aurora.apk 2>/dev/null' \
+              'rm -f /root/luci-theme-aurora.apk' \
+              'exit 0' > files/etc/uci-defaults/98-aurora-install
             chmod +x files/etc/uci-defaults/98-aurora-install
             echo "✓ aurora 安装脚本已创建"
           fi
@@ -200,32 +198,26 @@ EOF
           # 优先级：argon（两者都选时）> aurora > bootstrap
           if [ "${ENABLE_ARGON}" == "true" ]; then
             # argon 为默认（无论是否同时选了 aurora）
-            cat > files/etc/uci-defaults/99-theme << 'EOF'
-#!/bin/sh
-uci set luci.main.mediaurlbase="/luci-static/argon"
-uci commit luci
-exit 0
-EOF
+            printf '%s\n' '#!/bin/sh' \
+              'uci set luci.main.mediaurlbase="/luci-static/argon"' \
+              'uci commit luci' \
+              'exit 0' > files/etc/uci-defaults/99-theme
             chmod +x files/etc/uci-defaults/99-theme
             echo "默认主题: argon"
           elif [ "${ENABLE_AURORA}" == "true" ]; then
             # 只选 aurora 时，设 aurora 为默认（aurora 包已在 98-aurora-install 中安装）
-            cat > files/etc/uci-defaults/99-theme << 'EOF'
-#!/bin/sh
-uci set luci.main.mediaurlbase="/luci-static/aurora"
-uci commit luci
-exit 0
-EOF
+            printf '%s\n' '#!/bin/sh' \
+              'uci set luci.main.mediaurlbase="/luci-static/aurora"' \
+              'uci commit luci' \
+              'exit 0' > files/etc/uci-defaults/99-theme
             chmod +x files/etc/uci-defaults/99-theme
             echo "默认主题: aurora"
           else
             # 都不选，使用 bootstrap
-            cat > files/etc/uci-defaults/99-theme << 'EOF'
-#!/bin/sh
-uci set luci.main.mediaurlbase="/luci-static/bootstrap"
-uci commit luci
-exit 0
-EOF
+            printf '%s\n' '#!/bin/sh' \
+              'uci set luci.main.mediaurlbase="/luci-static/bootstrap"' \
+              'uci commit luci' \
+              'exit 0' > files/etc/uci-defaults/99-theme
             chmod +x files/etc/uci-defaults/99-theme
             echo "默认主题: bootstrap"
           fi
