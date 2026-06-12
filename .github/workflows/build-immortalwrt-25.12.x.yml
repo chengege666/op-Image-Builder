@@ -43,6 +43,16 @@ on:
         description: '路由器管理地址 (LAN IP)'
         required: true
         default: '192.168.1.1'
+      enable_argon:
+        description: 'argon 主题'
+        required: false
+        type: boolean
+        default: true
+      enable_aurora:
+        description: 'aurora 主题'
+        required: false
+        type: boolean
+        default: false
       enable_pppoe:
         description: '启用 PPPoE 拨号配置'
         required: false
@@ -112,6 +122,8 @@ jobs:
           FIRMWARE_SIZE: ${{ github.event.inputs.firmware_size }}
           CUSTOM_FIRMWARE_SIZE: ${{ github.event.inputs.custom_firmware_size }}
           BUILD_TYPE: ${{ github.event.inputs.build_type }}
+          ENABLE_ARGON: ${{ github.event.inputs.enable_argon }}
+          ENABLE_AURORA: ${{ github.event.inputs.enable_aurora }}
           ENABLE_PPPOE: ${{ github.event.inputs.enable_pppoe }}
           PPPOE_USER: ${{ github.event.inputs.pppoe_username }}
           PPPOE_PASS: ${{ github.event.inputs.pppoe_password }}
@@ -152,7 +164,63 @@ jobs:
              # 配置 PPPoE 拨号
              [ -f ../scripts/set_pppoe.sh ] && ../scripts/set_pppoe.sh
           fi
-          
+
+          # 配置 LuCI 主题
+          echo "argon 主题: ${ENABLE_ARGON}"
+          echo "aurora 主题: ${ENABLE_AURORA}"
+
+          # ---------- 安装主题包 ----------
+          # argon 主题（从官方源安装，依赖自动处理）
+          if [ "${ENABLE_ARGON}" == "true" ]; then
+            echo "luci-theme-argon" >> custom_packages.txt
+            echo "✓ argon 主题包已添加"
+          fi
+
+          # aurora 主题（第三方，从 GitHub Release 下载本地包）
+          if [ "${ENABLE_AURORA}" == "true" ]; then
+            echo "正在下载 Aurora 主题包..."
+            mkdir -p packages
+            # ImmortalWrt 25.12.x 使用 apk 包格式
+            wget -qO packages/luci-theme-aurora.apk \
+              https://github.com/eamonxg/luci-theme-aurora/releases/latest/download/luci-theme-aurora-0.12.0-r20260531.apk
+            echo "luci-theme-aurora" >> custom_packages.txt
+            echo "✓ aurora 主题包已添加（packages/ 目录）"
+          fi
+
+          # ---------- 设置默认主题 ----------
+          # 优先级：argon（两者都选时）> aurora > bootstrap
+          if [ "${ENABLE_ARGON}" == "true" ]; then
+            # argon 为默认（无论是否同时选了 aurora）
+            cat > files/etc/uci-defaults/99-theme << 'EOF'
+#!/bin/sh
+uci set luci.main.mediaurlbase="/luci-static/argon"
+uci commit luci
+exit 0
+EOF
+            chmod +x files/etc/uci-defaults/99-theme
+            echo "默认主题: argon"
+          elif [ "${ENABLE_AURORA}" == "true" ]; then
+            # 只选 aurora 时，设 aurora 为默认
+            cat > files/etc/uci-defaults/99-theme << 'EOF'
+#!/bin/sh
+uci set luci.main.mediaurlbase="/luci-static/aurora"
+uci commit luci
+exit 0
+EOF
+            chmod +x files/etc/uci-defaults/99-theme
+            echo "默认主题: aurora"
+          else
+            # 都不选，使用 bootstrap
+            cat > files/etc/uci-defaults/99-theme << 'EOF'
+#!/bin/sh
+uci set luci.main.mediaurlbase="/luci-static/bootstrap"
+uci commit luci
+exit 0
+EOF
+            chmod +x files/etc/uci-defaults/99-theme
+            echo "默认主题: bootstrap"
+          fi
+
           # 基础包列表 - 补全网卡驱动和核心组件
           BASE_PACKAGES="luci luci-base luci-ssl uhttpd uhttpd-mod-ubus \
           luci-i18n-base-zh-cn luci-i18n-firewall-zh-cn \
@@ -236,6 +304,7 @@ jobs:
             ImmortalWrt x86_64 固件
             版本: ${{ github.event.inputs.version }}
             类型: ${{ github.event.inputs.build_type }}
+            主题: ${{ github.event.inputs.enable_argon == 'true' && 'argon' || '' }}${{ github.event.inputs.enable_aurora == 'true' && ' aurora' || '' }}${{ github.event.inputs.enable_argon != 'true' && github.event.inputs.enable_aurora != 'true' && ' bootstrap' || '' }}
             管理地址: ${{ github.event.inputs.lan_ip }}
             用户名: root
             密码: (无)
