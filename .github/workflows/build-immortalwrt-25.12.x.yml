@@ -296,11 +296,13 @@ jobs:
           path: firmware/
 
       - name: 发布到 GitHub Release
-        uses: softprops/action-gh-release@v1
+        uses: softprops/action-gh-release@v2
         if: github.event.inputs.auto_release == 'true'
         with:
           tag_name: v${{ github.event.inputs.version }}-${{ github.run_id }}
           name: ImmortalWrt ${{ github.event.inputs.version }} x86_64
+          generate_release_notes: false
+          make_latest: false
           body: |
             ImmortalWrt x86_64 固件
             版本: ${{ github.event.inputs.version }}
@@ -319,5 +321,4 @@ jobs:
             ${{ contains(github.event.inputs.build_type, 'rootfs') && '• 不支持直接刷入物理机' || '• squashfs: 只读压缩系统分区' }}
             ${{ contains(github.event.inputs.build_type, 'rootfs') && '' || '• ext4: 可读写用户分区' }}
           files: firmware/*
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          fail_on_unmatched_files: true
