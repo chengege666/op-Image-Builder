@@ -615,23 +615,18 @@ jobs:
           path: firmware/
 
       - name: 发布到 GitHub Release
-        uses: softprops/action-gh-release@v2
         if: ${{ github.event.inputs.auto_release == 'true' }}
-        with:
-          tag_name: immortalwrt-v${{ env.VERSION }}-${{ github.run_id }}
-          name: ImmortalWrt ${{ env.VERSION }} x86_64
-          body: |
-            ImmortalWrt x86_64 固件
+        run: |
+          set -e
+          TAG="immortalwrt-v${{ env.VERSION }}-${{ github.run_id }}"
+          gh release create "$TAG" firmware/* \
+            --repo "${{ github.repository }}" \
+            --title "ImmortalWrt ${{ env.VERSION }} x86_64" \
+            --notes "ImmortalWrt x86_64 固件
             版本：${{ env.VERSION }}
             类型：${{ github.event.inputs.build_type }}
             主题：${{ github.event.inputs.enable_argon_theme == 'true' && 'argon' || '' }}${{ github.event.inputs.enable_aurora == 'true' && ' aurora' || '' }}${{ github.event.inputs.enable_argon_theme != 'true' && github.event.inputs.enable_aurora != 'true' && '' || '' }}
             管理地址：${{ github.event.inputs.lan_ip }}
             用户名：root
             密码：(无)
-            固件大小：${{ env.FIRMWARE_SIZE }}MB
-            
-            ImmortalWrt 是基于 OpenWrt 的第三方固件分支，提供更多预编译包和优化的内核。
-          files: |
-            firmware/*
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+            固件大小：${{ env.FIRMWARE_SIZE }}MB"

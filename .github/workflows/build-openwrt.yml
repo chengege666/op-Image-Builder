@@ -608,20 +608,18 @@ jobs:
           path: firmware/
 
       - name: 发布到 GitHub Release
-        uses: softprops/action-gh-release@v2
         if: github.event.inputs.auto_release == 'true'
-        with:
-          tag_name: v${{ env.VERSION }}-${{ github.run_id }}
-          name: OpenWrt ${{ env.VERSION }} x86_64
-          body: |
-            OpenWrt x86_64 固件
+        run: |
+          set -e
+          TAG="v${{ env.VERSION }}-${{ github.run_id }}"
+          gh release create "$TAG" firmware/* \
+            --repo "${{ github.repository }}" \
+            --title "OpenWrt ${{ env.VERSION }} x86_64" \
+            --notes "OpenWrt x86_64 固件
             版本: ${{ env.VERSION }}
             类型: ${{ github.event.inputs.build_type }}
             主题: ${{ github.event.inputs.enable_argon_theme == 'true' && 'argon' || '' }}${{ github.event.inputs.enable_aurora == 'true' && ' aurora' || '' }}${{ github.event.inputs.enable_argon_theme != 'true' && github.event.inputs.enable_aurora != 'true' && '' || '' }}
             管理地址: ${{ github.event.inputs.lan_ip }}
             用户名: root
             密码: (无)
-            固件大小: ${{ env.FIRMWARE_SIZE }}MB
-          files: firmware/*
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+            固件大小: ${{ env.FIRMWARE_SIZE }}MB"
