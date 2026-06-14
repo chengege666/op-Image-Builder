@@ -320,6 +320,7 @@ jobs:
             用户名: root
             密码: (无)
             固件大小: ${{ env.FIRMWARE_SIZE }}MB
+            .Run 安装器: ${{ github.event.inputs.enable_run_installer == 'true' && '已启用' || '未启用' }}
             PPPoE: ${{ github.event.inputs.enable_pppoe == 'true' && '已启用' || '未启用' }}
             
             ---
