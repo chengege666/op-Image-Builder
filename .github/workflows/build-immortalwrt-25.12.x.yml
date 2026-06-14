@@ -53,6 +53,11 @@ on:
         required: false
         type: boolean
         default: false
+      enable_run_installer:
+        description: '启用 .Run 安装器'
+        required: false
+        type: boolean
+        default: false
       enable_pppoe:
         description: '启用 PPPoE 拨号配置'
         required: false
@@ -124,6 +129,7 @@ jobs:
           BUILD_TYPE: ${{ github.event.inputs.build_type }}
           ENABLE_ARGON: ${{ github.event.inputs.enable_argon }}
           ENABLE_AURORA: ${{ github.event.inputs.enable_aurora }}
+          ENABLE_RUN_INSTALLER: ${{ github.event.inputs.enable_run_installer }}
           ENABLE_PPPOE: ${{ github.event.inputs.enable_pppoe }}
           PPPOE_USER: ${{ github.event.inputs.pppoe_username }}
           PPPOE_PASS: ${{ github.event.inputs.pppoe_password }}
@@ -192,6 +198,31 @@ jobs:
               'exit 0' > files/etc/uci-defaults/98-aurora-install
             chmod +x files/etc/uci-defaults/98-aurora-install
             echo "✓ aurora 安装脚本已创建"
+          fi
+
+          # ---------- 安装 .Run 安装器 ----------
+          if [ "${ENABLE_RUN_INSTALLER}" == "true" ]; then
+            echo "正在下载 .Run 安装器..."
+            mkdir -p files/root
+            # 获取最新 release 的 apk 下载链接
+            RUN_APK_URL=$(curl -s https://api.github.com/repos/chengege666/apk-run/releases/latest | grep "browser_download_url.*\.apk" | cut -d '"' -f 4)
+            if [ -n "$RUN_APK_URL" ]; then
+              wget -qO files/root/luci-app-run.apk "$RUN_APK_URL"
+              echo "✓ .Run 安装器已下载"
+              
+              # 创建安装脚本并修改菜单名称
+              printf '%s\n' '#!/bin/sh' \
+                'apk add --allow-untrusted /root/luci-app-run.apk 2>/dev/null' \
+                'rm -f /root/luci-app-run.apk' \
+                'if [ -f /usr/share/luci/menu.d/luci-app-run.json ]; then' \
+                '  sed -i "s/Run安装工具/.Run安装器/g" /usr/share/luci/menu.d/luci-app-run.json' \
+                'fi' \
+                'exit 0' > files/etc/uci-defaults/98-run-installer-install
+              chmod +x files/etc/uci-defaults/98-run-installer-install
+              echo "✓ .Run 安装器安装脚本已创建"
+            else
+              echo "⚠️ 未找到 .Run 安装器下载链接"
+            fi
           fi
 
           # ---------- 设置默认主题 ----------

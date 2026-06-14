@@ -70,6 +70,11 @@ on:
         required: false
         type: boolean
         default: false
+      enable_run_installer:
+        description: '启用 .Run 安装器'
+        required: false
+        type: boolean
+        default: false
       enable_openclash:
         description: '启用 OpenClash (luci-app-openclash) [rootfs 不支持，勾选无效]'
         required: false
@@ -144,6 +149,7 @@ jobs:
       - name: 下载第三方 ipk 包
         env:
           ENABLE_ARGON_THEME: ${{ github.event.inputs.enable_argon_theme }}
+          ENABLE_RUN_INSTALLER: ${{ github.event.inputs.enable_run_installer }}
           ENABLE_OPENCLASH: ${{ github.event.inputs.enable_openclash }}
           BUILD_TYPE: ${{ github.event.inputs.build_type }}
           VERSION: ${{ env.VERSION }}
@@ -223,6 +229,21 @@ jobs:
                    echo "⚠️ 未找到语言包: $LANG_PATTERN"
                 fi
                 rm -f third_party_packages/Packages.gz
+             fi
+          fi
+
+          # .Run 安装器
+          if [ "${ENABLE_RUN_INSTALLER}" = "true" ]; then
+             echo ""
+             echo "➡️ 处理: luci-app-run"
+             RUN_IPK_URL=$(curl -s https://api.github.com/repos/chengege666/apk-run/releases/latest | grep "browser_download_url.*\.ipk" | cut -d '"' -f 4)
+             if [ -n "$RUN_IPK_URL" ]; then
+                echo "   ⬇️ 下载: $(basename "$RUN_IPK_URL")"
+                wget -qO "third_party_packages/$(basename "$RUN_IPK_URL")" "$RUN_IPK_URL"
+                PACKAGE_NAMES="$PACKAGE_NAMES luci-app-run"
+                echo "   ✅ .Run 安装器下载完成"
+             else
+                echo "   ⚠️ 警告：未找到 .Run 安装器 ipk 文件"
              fi
           fi
           
@@ -367,6 +388,7 @@ jobs:
           CUSTOM_FIRMWARE_SIZE: ${{ github.event.inputs.custom_firmware_size }}
           ENABLE_STORE: ${{ github.event.inputs.enable_store }}
           ENABLE_DOCKER: ${{ github.event.inputs.enable_docker }}
+          ENABLE_RUN_INSTALLER: ${{ github.event.inputs.enable_run_installer }}
           BUILD_TYPE: ${{ github.event.inputs.build_type }}
           ENABLE_PPPOE: ${{ github.event.inputs.enable_pppoe }}
           PPPOE_USER: ${{ github.event.inputs.pppoe_user }}
@@ -442,6 +464,17 @@ jobs:
              [ -f ../scripts/set_pppoe.sh ] && ../scripts/set_pppoe.sh
           else
              echo "⚠️ 警告：未找到 ../scripts/ 目录或任何 .sh 脚本，跳过自定义配置（IP/Docker/PPPoE 等）"
+          fi
+
+          # ---------- .Run 安装器菜单更名 ----------
+          if [ "${ENABLE_RUN_INSTALLER}" == "true" ]; then
+            printf '%s\n' '#!/bin/sh' \
+              'if [ -f /usr/share/luci/menu.d/luci-app-run.json ]; then' \
+              '  sed -i "s/Run安装工具/.Run安装器/g" /usr/share/luci/menu.d/luci-app-run.json' \
+              'fi' \
+              'exit 0' > files/etc/uci-defaults/99-run-installer-rename
+            chmod +x files/etc/uci-defaults/99-run-installer-rename
+            echo "✓ .Run 安装器菜单更名脚本已创建"
           fi
           
           # 部署 OpenClash 内核

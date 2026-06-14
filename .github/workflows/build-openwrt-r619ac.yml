@@ -21,6 +21,11 @@ on:
         required: false
         type: boolean
         default: true
+      enable_run_installer:
+        description: '启用 .Run 安装器'
+        required: false
+        type: boolean
+        default: false
       enable_docker:
         description: '启用 Docker (建议配合 USB 存储使用)'
         required: false
@@ -101,15 +106,35 @@ jobs:
             tar -xf openwrt-ib.${FILE_EXT} -C openwrt-ib --strip-components=1
           fi
 
+      - name: 下载第三方 ipk 包
+        env:
+          ENABLE_RUN_INSTALLER: ${{ github.event.inputs.enable_run_installer }}
+        run: |
+          mkdir -p third_party_packages
+          if [ "${ENABLE_RUN_INSTALLER}" = "true" ]; then
+             echo "➡️ 处理: luci-app-run"
+             RUN_IPK_URL=$(curl -s https://api.github.com/repos/chengege666/apk-run/releases/latest | grep "browser_download_url.*\.ipk" | cut -d '"' -f 4)
+             if [ -n "$RUN_IPK_URL" ]; then
+                echo "   ⬇️ 下载: $(basename "$RUN_IPK_URL")"
+                wget -qO "third_party_packages/$(basename "$RUN_IPK_URL")" "$RUN_IPK_URL"
+                echo "RUN_INSTALLER_IPK=$(basename "$RUN_IPK_URL")" >> $GITHUB_ENV
+                echo "   ✅ .Run 安装器下载完成"
+             else
+                echo "   ⚠️ 警告：未找到 .Run 安装器 ipk 文件"
+             fi
+          fi
+
       - name: 配置构建参数
         working-directory: ./openwrt-ib
         env:
           LAN_IP: ${{ github.event.inputs.lan_ip }}
           ENABLE_STORE: ${{ github.event.inputs.enable_store }}
+          ENABLE_RUN_INSTALLER: ${{ github.event.inputs.enable_run_installer }}
           ENABLE_DOCKER: ${{ github.event.inputs.enable_docker }}
           ENABLE_PPPOE: ${{ github.event.inputs.enable_pppoe }}
           PPPOE_USER: ${{ github.event.inputs.pppoe_user }}
           PPPOE_PASS: ${{ github.event.inputs.pppoe_pass }}
+          RUN_INSTALLER_IPK: ${{ env.RUN_INSTALLER_IPK }}
         run: |
           # 准备文件目录
           mkdir -p files/etc/uci-defaults
@@ -160,9 +185,37 @@ jobs:
               BASE_PACKAGES="$BASE_PACKAGES luci-i18n-package-manager-zh-cn"
           fi
 
-          # 确保 .config 存在
           [ -f .config ] || touch .config
           
+          # ---------- .Run 安装器集成 ----------
+          if [ "${ENABLE_RUN_INSTALLER}" == "true" ] && [ -n "${RUN_INSTALLER_IPK}" ]; then
+             echo "📦 集成 .Run 安装器..."
+             mkdir -p packages
+             cp "../third_party_packages/${RUN_INSTALLER_IPK}" packages/
+             echo "luci-app-run" >> custom_packages.txt
+             
+             # 为本地包生成索引
+             (cd packages && ../scripts/gen_packages.sh . > Packages 2>/dev/null || {
+               for ipk in *.ipk; do
+                 pkg_name=$(echo "$ipk" | sed 's/_.*//')
+                 echo "Package: $pkg_name"
+                 echo "Filename: $ipk"
+                 echo ""
+               done > Packages
+             })
+             gzip -c packages/Packages > packages/Packages.gz 2>/dev/null || true
+             echo "src custom file://$(pwd)/packages" >> repositories.conf
+             
+             # 菜单更名脚本
+             printf '%s\n' '#!/bin/sh' \
+               'if [ -f /usr/share/luci/menu.d/luci-app-run.json ]; then' \
+               '  sed -i "s/Run安装工具/.Run安装器/g" /usr/share/luci/menu.d/luci-app-run.json' \
+               'fi' \
+               'exit 0' > files/etc/uci-defaults/99-run-installer-rename
+             chmod +x files/etc/uci-defaults/99-run-installer-rename
+             echo "✓ .Run 安装器集成完成"
+          fi
+
           # 读取自定义包
           CUSTOM_PACKAGES=$(cat custom_packages.txt | tr '\n' ' ')
           
