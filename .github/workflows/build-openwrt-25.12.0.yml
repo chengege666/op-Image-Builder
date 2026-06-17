@@ -54,6 +54,11 @@ on:
         required: false
         type: boolean
         default: false
+      enable_istore:
+        description: '启用 iStore 应用商店'
+        required: false
+        type: boolean
+        default: false
       enable_pppoe:
         description: '启用 PPPoE 拨号配置'
         required: false
@@ -125,6 +130,7 @@ jobs:
           BUILD_TYPE: ${{ github.event.inputs.build_type }}
           ENABLE_AURORA: ${{ github.event.inputs.enable_aurora }}
           ENABLE_RUN_INSTALLER: ${{ github.event.inputs.enable_run_installer }}
+          ENABLE_ISTORE: ${{ github.event.inputs.enable_istore }}
           ENABLE_PPPOE: ${{ github.event.inputs.enable_pppoe }}
           PPPOE_USER: ${{ github.event.inputs.pppoe_username }}
           PPPOE_PASS: ${{ github.event.inputs.pppoe_password }}
@@ -210,6 +216,28 @@ jobs:
             else
               echo "⚠️ 未找到 .Run 安装器下载链接"
             fi
+          fi
+
+          # ---------- 安装 iStore 应用商店 ----------
+          if [ "${ENABLE_ISTORE}" == "true" ]; then
+            echo "正在下载 iStore 安装脚本..."
+            mkdir -p files/root
+            wget -qO files/root/istore-reinstall.run \
+              https://github.com/linkease/openwrt-app-actions/raw/main/applications/luci-app-systools/root/usr/share/systools/istore-reinstall.run
+            if [ ! -s files/root/istore-reinstall.run ]; then
+              echo "❌ iStore 安装脚本下载失败！"
+              exit 1
+            fi
+            echo "✓ iStore 安装脚本已下载到 files/root/"
+
+            # 创建首次启动安装脚本
+            printf '%s\n' '#!/bin/sh' \
+              'chmod 755 /root/istore-reinstall.run' \
+              '/root/istore-reinstall.run' \
+              'rm -f /root/istore-reinstall.run' \
+              'exit 0' > files/etc/uci-defaults/98-istore-install
+            chmod +x files/etc/uci-defaults/98-istore-install
+            echo "✓ iStore 安装脚本已创建"
           fi
 
           # ---------- 设置默认主题 ----------
@@ -321,6 +349,7 @@ jobs:
             密码: (无)
             固件大小: ${{ env.FIRMWARE_SIZE }}MB
             .Run 安装器: ${{ github.event.inputs.enable_run_installer == 'true' && '已启用' || '未启用' }}
+            iStore: ${{ github.event.inputs.enable_istore == 'true' && '已启用' || '未启用' }}
             PPPoE: ${{ github.event.inputs.enable_pppoe == 'true' && '已启用' || '未启用' }}
             
             ---
