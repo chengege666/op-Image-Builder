@@ -44,21 +44,6 @@ on:
         description: '路由器管理地址 (LAN IP)'
         required: true
         default: '192.168.1.1'
-      enable_aurora:
-        description: 'aurora 主题'
-        required: false
-        type: boolean
-        default: false
-      enable_run_installer:
-        description: '启用 .Run 安装器'
-        required: false
-        type: boolean
-        default: false
-      enable_istore:
-        description: '启用 iStore 应用商店'
-        required: false
-        type: boolean
-        default: false
       enable_pppoe:
         description: '启用 PPPoE 拨号配置'
         required: false
@@ -128,9 +113,6 @@ jobs:
           FIRMWARE_SIZE: ${{ github.event.inputs.firmware_size }}
           CUSTOM_FIRMWARE_SIZE: ${{ github.event.inputs.custom_firmware_size }}
           BUILD_TYPE: ${{ github.event.inputs.build_type }}
-          ENABLE_AURORA: ${{ github.event.inputs.enable_aurora }}
-          ENABLE_RUN_INSTALLER: ${{ github.event.inputs.enable_run_installer }}
-          ENABLE_ISTORE: ${{ github.event.inputs.enable_istore }}
           ENABLE_PPPOE: ${{ github.event.inputs.enable_pppoe }}
           PPPOE_USER: ${{ github.event.inputs.pppoe_username }}
           PPPOE_PASS: ${{ github.event.inputs.pppoe_password }}
@@ -171,93 +153,7 @@ jobs:
              # 配置 PPPoE 拨号
              [ -f ../scripts/set_pppoe.sh ] && ../scripts/set_pppoe.sh
           fi
-
-          # 配置 LuCI 主题
-          echo "aurora 主题: ${ENABLE_AURORA}"
-
-          # ---------- 安装主题包 ----------
-          # aurora 主题（第三方，从 GitHub Release 下载）
-          if [ "${ENABLE_AURORA}" == "true" ]; then
-            echo "正在下载 Aurora 主题包..."
-            mkdir -p files/root
-            wget -qO files/root/luci-theme-aurora.apk \
-              https://github.com/eamonxg/luci-theme-aurora/releases/latest/download/luci-theme-aurora-0.12.0-r20260531.apk
-            echo "✓ aurora 主题包已下载到 files/root/"
-
-            # 单独创建安装脚本，不依赖默认主题设置
-            printf '%s\n' '#!/bin/sh' \
-              'apk add --allow-untrusted /root/luci-theme-aurora.apk 2>/dev/null' \
-              'rm -f /root/luci-theme-aurora.apk' \
-              'exit 0' > files/etc/uci-defaults/98-aurora-install
-            chmod +x files/etc/uci-defaults/98-aurora-install
-            echo "✓ aurora 安装脚本已创建"
-          fi
-
-          # ---------- 安装 .Run 安装器 ----------
-          if [ "${ENABLE_RUN_INSTALLER}" == "true" ]; then
-            echo "正在下载 .Run 安装器..."
-            mkdir -p files/root
-            # 获取最新 release 的 apk 下载链接
-            RUN_APK_URL=$(curl -s https://api.github.com/repos/chengege666/apk-run/releases/latest | grep "browser_download_url.*\.apk" | cut -d '"' -f 4)
-            if [ -n "$RUN_APK_URL" ]; then
-              wget -qO files/root/luci-app-run.apk "$RUN_APK_URL"
-              echo "✓ .Run 安装器已下载"
-              
-              # 创建安装脚本并修改菜单名称
-              printf '%s\n' '#!/bin/sh' \
-                'apk add --allow-untrusted /root/luci-app-run.apk 2>/dev/null' \
-                'rm -f /root/luci-app-run.apk' \
-                'if [ -f /usr/share/luci/menu.d/luci-app-run.json ]; then' \
-                '  sed -i "s/Run安装工具/.Run安装器/g" /usr/share/luci/menu.d/luci-app-run.json' \
-                'fi' \
-                'exit 0' > files/etc/uci-defaults/98-run-installer-install
-              chmod +x files/etc/uci-defaults/98-run-installer-install
-              echo "✓ .Run 安装器安装脚本已创建"
-            else
-              echo "⚠️ 未找到 .Run 安装器下载链接"
-            fi
-          fi
-
-          # ---------- 安装 iStore 应用商店 ----------
-          if [ "${ENABLE_ISTORE}" == "true" ]; then
-            echo "正在下载 iStore 安装脚本..."
-            mkdir -p files/root
-            wget -qO files/root/istore-reinstall.run \
-              https://github.com/linkease/openwrt-app-actions/raw/main/applications/luci-app-systools/root/usr/share/systools/istore-reinstall.run
-            if [ ! -s files/root/istore-reinstall.run ]; then
-              echo "❌ iStore 安装脚本下载失败！"
-              exit 1
-            fi
-            echo "✓ iStore 安装脚本已下载到 files/root/"
-
-            # 创建首次启动安装脚本
-            printf '%s\n' '#!/bin/sh' \
-              'chmod 755 /root/istore-reinstall.run' \
-              '/root/istore-reinstall.run' \
-              'rm -f /root/istore-reinstall.run' \
-              'exit 0' > files/etc/uci-defaults/98-istore-install
-            chmod +x files/etc/uci-defaults/98-istore-install
-            echo "✓ iStore 安装脚本已创建"
-          fi
-
-          # ---------- 设置默认主题 ----------
-          # 优先级：aurora > bootstrap
-          if [ "${ENABLE_AURORA}" == "true" ]; then
-            printf '%s\n' '#!/bin/sh' \
-              'uci set luci.main.mediaurlbase="/luci-static/aurora"' \
-              'uci commit luci' \
-              'exit 0' > files/etc/uci-defaults/99-theme
-            chmod +x files/etc/uci-defaults/99-theme
-            echo "默认主题: aurora"
-          else
-            printf '%s\n' '#!/bin/sh' \
-              'uci set luci.main.mediaurlbase="/luci-static/bootstrap"' \
-              'uci commit luci' \
-              'exit 0' > files/etc/uci-defaults/99-theme
-            chmod +x files/etc/uci-defaults/99-theme
-            echo "默认主题: bootstrap"
-          fi
-
+          
           # 基础包列表 - 补全网卡驱动和核心组件
           BASE_PACKAGES="luci luci-base luci-ssl uhttpd uhttpd-mod-ubus \
           luci-i18n-base-zh-cn luci-i18n-firewall-zh-cn \
@@ -332,24 +228,19 @@ jobs:
           path: firmware/
 
       - name: 发布到 GitHub Release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v1
         if: github.event.inputs.auto_release == 'true'
         with:
           tag_name: v${{ github.event.inputs.version }}-${{ github.run_id }}
           name: OpenWrt ${{ github.event.inputs.version }} x86_64
-          generate_release_notes: false
-          make_latest: false
           body: |
             OpenWrt x86_64 固件
             版本: ${{ github.event.inputs.version }}
             类型: ${{ github.event.inputs.build_type }}
-            主题: ${{ github.event.inputs.enable_aurora == 'true' && 'aurora' || 'bootstrap' }}
             管理地址: ${{ github.event.inputs.lan_ip }}
             用户名: root
             密码: (无)
             固件大小: ${{ env.FIRMWARE_SIZE }}MB
-            .Run 安装器: ${{ github.event.inputs.enable_run_installer == 'true' && '已启用' || '未启用' }}
-            iStore: ${{ github.event.inputs.enable_istore == 'true' && '已启用' || '未启用' }}
             PPPoE: ${{ github.event.inputs.enable_pppoe == 'true' && '已启用' || '未启用' }}
             
             ---
@@ -359,4 +250,5 @@ jobs:
             ${{ contains(github.event.inputs.build_type, 'rootfs') && '• 不支持直接刷入物理机' || '• squashfs: 只读压缩系统分区' }}
             ${{ contains(github.event.inputs.build_type, 'rootfs') && '' || '• ext4: 可读写用户分区' }}
           files: firmware/*
-          fail_on_unmatched_files: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
