@@ -54,3 +54,4 @@
 ## 配合工具
 
 - [PVE 镜像转换工具 (pvezh)](https://github.com/chengege666/pvezh) — 一键导入固件到 Proxmox VE
+- [OpenWrt APK 工具 (OpenWrt-APK)](https://github.com/chengege666/OpenWrt-APK) — OpenWrt 安装/运行 Android APK 工具
