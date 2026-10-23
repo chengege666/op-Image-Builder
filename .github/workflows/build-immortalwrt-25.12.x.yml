@@ -14,11 +14,11 @@ on:
       version:
         description: 'ImmortalWrt 版本'
         required: true
-        default: '25.12.1'
+        default: '25.12.2'
         type: choice
         options:
+          - '25.12.2'
           - '25.12.1'
-          - '25.12.0'
       auto_release:
         description: '构建成功后是否自动发布到 GitHub Release'
         required: false
